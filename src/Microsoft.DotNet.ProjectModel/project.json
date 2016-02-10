@@ -1,39 +1,45 @@
 {
-    "version": "1.0.0-*",
-    "compilationOptions": {
-        "keyFile": "../../tools/Key.snk"
+  "version": "1.0.0-*",
+  "compilationOptions": {
+    "keyFile": "../../tools/Key.snk"
+  },
+  "description": "Types to model a .NET Project",
+  "dependencies": {
+    "System.Reflection.Metadata": "1.2.0-rc2-23810",
+
+    "NuGet.Packaging": "3.4.0-beta-583",
+    "Microsoft.Extensions.FileSystemGlobbing": "1.0.0-rc2-15996",
+    "Microsoft.Extensions.JsonParser.Sources": {
+      "type": "build",
+      "version": "1.0.0-rc2-16453"
     },
-    "description": "Types to model a .NET Project",
-    "dependencies": {
+    "Microsoft.Extensions.HashCodeCombiner.Sources": {
+      "type": "build",
+      "version": "1.0.0-rc2-16054"
+    },
+    "Microsoft.Extensions.DependencyModel": {
+      "type": "build",
+      "version": "1.0.0-*"
+    }
+  },
+  "frameworks": {
+    "net451": {
+      "frameworkAssemblies": {
+        "System.IO": ""
+      }
+    },
+    "dnxcore50": {
+      "imports": "portable-net45+win8",
+      "dependencies": {
         "NETStandard.Library": "1.0.0-rc2-23810",
-        "System.Reflection.Metadata": "1.2.0-rc2-23810",
-        "System.Runtime.Loader": "4.0.0-rc2-23810",
         "System.Dynamic.Runtime": "4.0.11-rc2-23810",
+        "System.Runtime.Loader": "4.0.0-rc2-23810",
         "System.Security.Cryptography.Algorithms": "4.0.0-rc2-23810",
         "Microsoft.CSharp": "4.0.1-rc2-23810",
-        "System.Xml.XDocument": "4.0.11-rc2-23810",
-        "NuGet.Packaging": "3.4.0-beta-583",
-
-        "Microsoft.Extensions.FileSystemGlobbing": "1.0.0-rc2-15996",
-        "Microsoft.Extensions.JsonParser.Sources": {
-            "type": "build",
-            "version": "1.0.0-rc2-16453"
-        },
-        "Microsoft.Extensions.HashCodeCombiner.Sources": {
-            "type": "build",
-            "version": "1.0.0-rc2-16054"
-        },
-        "Microsoft.Extensions.DependencyModel": {
-            "type": "build",
-            "version": "1.0.0-*"
-        }
-    },
-
-    "frameworks": {
-        "dnxcore50": {
-            "imports": "portable-net45+win8"
-        }
-    },
-    "scripts": {
+        "System.Xml.XDocument": "4.0.11-rc2-23810"
+      }
     }
+  },
+  "scripts": {
+  }
 }
