@@ -12,7 +12,7 @@
         "System.Security.Cryptography.Algorithms": "4.0.0-rc2-23810",
         "Microsoft.CSharp": "4.0.1-rc2-23810",
         "System.Xml.XDocument": "4.0.11-rc2-23810",
-        "NuGet.Packaging": "3.4.0-beta-583",
+        "NuGet.Packaging": "3.4.0-beta-613",
 
         "Microsoft.Extensions.FileSystemGlobbing": "1.0.0-rc2-15996",
         "Microsoft.Extensions.JsonParser.Sources": {
@@ -23,10 +23,7 @@
             "type": "build",
             "version": "1.0.0-rc2-16054"
         },
-        "Microsoft.Extensions.DependencyModel": {
-            "type": "build",
-            "version": "1.0.0-*"
-        }
+        "Microsoft.Extensions.DependencyModel": "1.0.0-*"
     },
 
     "frameworks": {
