@@ -61,22 +61,34 @@ namespace Microsoft.DotNet.Tools.Run
             }
 
             var rids = PlatformServices.Default.Runtime.GetAllCandidateRuntimeIdentifiers();
+
             if (Framework == null)
             {
                 var defaultFrameworks = new[]
                 {
-                    FrameworkConstants.FrameworkIdentifiers.DnxCore,
+                    FrameworkConstants.FrameworkIdentifiers.NetCoreApp,
                     FrameworkConstants.FrameworkIdentifiers.NetStandardApp,
                 };
 
-                var contexts = ProjectContext.CreateContextForEachFramework(Project, null, rids);
-                _context = contexts.FirstOrDefault(c =>
-                    defaultFrameworks.Contains(c.TargetFramework.Framework) && !string.IsNullOrEmpty(c.RuntimeIdentifier));
+                var contexts = ProjectContext.CreateContextForEachFramework(Project, null);
 
-                if (_context == null)
+                ProjectContext context;
+                if (contexts.Count() == 1)
                 {
-                    throw new InvalidOperationException($"Couldn't find default target with framework: {string.Join(",", defaultFrameworks)}");
+                    context = contexts.Single();
                 }
+                else
+                {
+                    context = contexts.FirstOrDefault(c => defaultFrameworks.Contains(c.TargetFramework.Framework));
+                    if (context == null)
+                    {
+                        throw new InvalidOperationException($"Couldn't find target to run. Possible causes:" + Environment.NewLine +
+                            "1. No project.lock.json file or restore failed - run `dotnet restore`" + Environment.NewLine +
+                            $"2. project.lock.json has multiple targets none of which is in default list ({string.Join(", ", defaultFrameworks)})");
+                    }
+                }
+
+                _context = context.CreateRuntimeContext(rids);
             }
             else
             {
@@ -112,8 +124,19 @@ namespace Microsoft.DotNet.Tools.Run
                 return result;
             }
 
+            List<string> hostArgs = new List<string>();
+            if (!_context.TargetFramework.IsDesktop())
+            {
+                // Add Nuget Packages Probing Path
+                var nugetPackagesRoot = _context.PackagesDirectory;
+                var probingPathArg = "--additionalprobingpath";
+                hostArgs.Insert(0, nugetPackagesRoot);
+                hostArgs.Insert(0, probingPathArg);
+            }
+
             // Now launch the output and give it the results
-            var outputName = _context.GetOutputPaths(Configuration).RuntimeFiles.Executable;
+            var outputPaths = _context.GetOutputPaths(Configuration);
+            var outputName = outputPaths.RuntimeFiles.Executable;
 
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -133,23 +156,24 @@ namespace Microsoft.DotNet.Tools.Run
                 }
             }
 
-            // Locate the runtime
-            string dotnetHome = Environment.GetEnvironmentVariable("DOTNET_HOME");
-            if (string.IsNullOrEmpty(dotnetHome))
+            Command command;
+            if (outputName.EndsWith(FileNameSuffixes.DotNet.DynamicLib, StringComparison.OrdinalIgnoreCase))
             {
-                // Use the runtime deployed with the tools, if present
-                var candidateBase = Path.Combine(AppContext.BaseDirectory, "..");
-                var candidate = Path.Combine(candidateBase, "runtime/coreclr");
-                if (File.Exists(Path.Combine(candidate, Constants.LibCoreClrName)))
-                {
-                    dotnetHome = Path.GetFullPath(candidateBase);
-                }
+                // The executable is a ".dll", we need to call it through dotnet.exe
+                var muxer = new Muxer();
+
+                command = Command.Create(muxer.MuxerPath, Enumerable.Concat(
+                            Enumerable.Concat(new string[] { "exec" }, hostArgs),
+                            Enumerable.Concat(new string[] { outputName }, _args)));
+            }
+            else
+            {
+                command = Command.Create(outputName, Enumerable.Concat(hostArgs, _args));
             }
 
-            result = Command.Create(outputName, _args)
+            result = command
                 .ForwardStdOut()
                 .ForwardStdErr()
-                .EnvironmentVariable("DOTNET_HOME", dotnetHome)
                 .Execute()
                 .ExitCode;
 
@@ -158,7 +182,7 @@ namespace Microsoft.DotNet.Tools.Run
 
         private static int RunInteractive(string scriptName)
         {
-            var command = Command.CreateDotNet($"repl-csi", new [] {scriptName})
+            var command = Command.CreateDotNet($"repl-csi", new[] { scriptName })
                 .ForwardStdOut()
                 .ForwardStdErr();
             var result = command.Execute();

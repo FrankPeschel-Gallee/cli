@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0-*",
+  "compilationOptions": {
+    "emitEntryPoint": true
+  },
+  "dependencies": {
+    "Microsoft.NETCore.App": {
+      "type": "platform",
+      "version": "1.0.0-rc2-*"
+    },
+  },
+  "frameworks": {
+    "netcoreapp1.0": {
+      "imports": [
+        "netstandardapp1.5",
+        "dnxcore50"
+      ]
+    }
+  },
+  "content": [
+    "reflector_cmd.cmd"
+  ]
+}

@@ -12,7 +12,11 @@ using Microsoft.DotNet.Files;
 using Microsoft.DotNet.ProjectModel;
 using Microsoft.DotNet.ProjectModel.Compilation;
 using Microsoft.DotNet.ProjectModel.Graph;
+using Microsoft.Extensions.DependencyModel;
 using NuGet.Frameworks;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
+using System.Reflection.PortableExecutable;
 
 namespace Microsoft.Dotnet.Cli.Compiler.Common
 {
@@ -20,88 +24,231 @@ namespace Microsoft.Dotnet.Cli.Compiler.Common
     {
         private readonly ProjectContext _context;
 
-        private readonly OutputPaths _outputPaths;
-
         private readonly LibraryExporter _exporter;
 
-        public Executable(ProjectContext context, OutputPaths outputPaths, LibraryExporter exporter)
+        private readonly string _configuration;
+
+        private readonly OutputPaths _outputPaths;
+
+        private readonly string _runtimeOutputPath;
+
+        private readonly string _intermediateOutputPath;
+
+        private readonly CommonCompilerOptions _compilerOptions;
+
+        public Executable(ProjectContext context, OutputPaths outputPaths, LibraryExporter exporter, string configuration)
         {
             _context = context;
             _outputPaths = outputPaths;
+            _runtimeOutputPath = outputPaths.RuntimeOutputPath;
+            _intermediateOutputPath = outputPaths.IntermediateOutputDirectoryPath;
             _exporter = exporter;
+            _configuration = configuration;
+            _compilerOptions = _context.ProjectFile.GetCompilerOptions(_context.TargetFramework, configuration);
         }
 
         public void MakeCompilationOutputRunnable()
         {
-            if (string.IsNullOrEmpty(_context.RuntimeIdentifier))
-            {
-                throw new InvalidOperationException($"Can not make output runnable for framework {_context.TargetFramework}, because it doesn't have runtime target");
-            }
-
-            var outputPath = _outputPaths.RuntimeOutputPath;
-
-            CopyContentFiles(outputPath);
-
-            ExportRuntimeAssets(outputPath);
+            CopyContentFiles();
+            ExportRuntimeAssets();
         }
 
-        private void ExportRuntimeAssets(string outputPath)
+        private void ExportRuntimeAssets()
         {
             if (_context.TargetFramework.IsDesktop())
             {
-                MakeCompilationOutputRunnableForFullFramework(outputPath);
+                MakeCompilationOutputRunnableForFullFramework();
             }
             else
             {
-                MakeCompilationOutputRunnableForCoreCLR(outputPath);
+                MakeCompilationOutputRunnableForCoreCLR();
             }
         }
 
-        private void MakeCompilationOutputRunnableForFullFramework(
-            string outputPath)
+        private void MakeCompilationOutputRunnableForFullFramework()
         {
-            CopyAllDependencies(outputPath, _exporter.GetAllExports());
+            var dependencies = _exporter.GetDependencies();
+            CopyAssemblies(dependencies);
+            CopyAssets(dependencies);
             GenerateBindingRedirects(_exporter);
         }
 
-        private void MakeCompilationOutputRunnableForCoreCLR(string outputPath)
+        private void MakeCompilationOutputRunnableForCoreCLR()
         {
-            WriteDepsFileAndCopyProjectDependencies(_exporter, _context.ProjectFile.Name, outputPath);
+            WriteDepsFileAndCopyProjectDependencies(_exporter);
 
-            // TODO: Pick a host based on the RID
-            CoreHost.CopyTo(outputPath, _context.ProjectFile.Name + Constants.ExeSuffix);
-        }
-
-        private void CopyContentFiles(string outputPath)
-        {
-            var contentFiles = new ContentFiles(_context);
-            contentFiles.StructuredCopyTo(outputPath);
-        }
-
-        private static void CopyAllDependencies(string outputPath, IEnumerable<LibraryExport> libraryExports)
-        {
-            foreach (var libraryExport in libraryExports)
+            var emitEntryPoint = _compilerOptions.EmitEntryPoint ?? false;
+            if (emitEntryPoint && !string.IsNullOrEmpty(_context.RuntimeIdentifier))
             {
-                libraryExport.RuntimeAssemblies.CopyTo(outputPath);
-                libraryExport.NativeLibraries.CopyTo(outputPath);
-                libraryExport.RuntimeAssets.StructuredCopyTo(outputPath);
+                // TODO: Pick a host based on the RID
+                CoreHost.CopyTo(_runtimeOutputPath, _compilerOptions.OutputName + Constants.ExeSuffix);
             }
         }
 
-        private static void WriteDepsFileAndCopyProjectDependencies(
-            LibraryExporter exporter,
-            string projectFileName,
-            string outputPath)
+        private void CopyContentFiles()
         {
-            exporter
-                .GetDependencies(LibraryType.Package)
-                .WriteDepsTo(Path.Combine(outputPath, projectFileName + FileNameSuffixes.Deps));
+            var contentFiles = new ContentFiles(_context);
+            contentFiles.StructuredCopyTo(_runtimeOutputPath);
+        }
 
-            var projectExports = exporter.GetAllExports()
-                .Where(e => e.Library.Identity.Type == LibraryType.Project)
-                .ToArray();
+        private void CopyAssemblies(IEnumerable<LibraryExport> libraryExports)
+        {
+            foreach (var libraryExport in libraryExports)
+            {
+                libraryExport.RuntimeAssemblyGroups.GetDefaultAssets().CopyTo(_runtimeOutputPath);
+                libraryExport.NativeLibraryGroups.GetDefaultAssets().CopyTo(_runtimeOutputPath);
 
-            CopyAllDependencies(outputPath, projectExports);
+                foreach(var group in libraryExport.ResourceAssemblies.GroupBy(r => r.Locale))
+                {
+                    var localeSpecificDir = Path.Combine(_runtimeOutputPath, group.Key);
+                    if(!Directory.Exists(localeSpecificDir))
+                    {
+                        Directory.CreateDirectory(localeSpecificDir);
+                    }
+                    group.Select(r => r.Asset).CopyTo(localeSpecificDir);
+                }
+            }
+        }
+
+        private void CopyAssets(IEnumerable<LibraryExport> libraryExports)
+        {
+            foreach (var libraryExport in libraryExports)
+            {
+                libraryExport.RuntimeAssets.StructuredCopyTo(
+                    _runtimeOutputPath,
+                    _intermediateOutputPath);
+            }
+        }
+
+        private void WriteDepsFileAndCopyProjectDependencies(LibraryExporter exporter)
+        {
+            WriteDeps(exporter);
+            if (_context.ProjectFile.HasRuntimeOutput(_configuration))
+            {
+                WriteRuntimeConfig(exporter);
+                WriteDevRuntimeConfig(exporter);
+            }
+
+            var projectExports = exporter.GetDependencies(LibraryType.Project);
+            CopyAssemblies(projectExports);
+            CopyAssets(projectExports);
+
+            var packageExports = exporter.GetDependencies(LibraryType.Package);
+            CopyAssets(packageExports);
+        }
+
+        private void WriteRuntimeConfig(LibraryExporter exporter)
+        {
+            if (!_context.TargetFramework.IsDesktop())
+            {
+                // TODO: Suppress this file if there's nothing to write? RuntimeOutputFiles would have to be updated
+                // in order to prevent breaking incremental compilation...
+
+                var json = new JObject();
+                var runtimeOptions = new JObject();
+                json.Add("runtimeOptions", runtimeOptions);
+
+                WriteFramework(runtimeOptions, exporter);
+                WriteRuntimeOptions(runtimeOptions);
+
+                var runtimeConfigJsonFile =
+                    Path.Combine(_runtimeOutputPath, _compilerOptions.OutputName + FileNameSuffixes.RuntimeConfigJson);
+
+                using (var writer = new JsonTextWriter(new StreamWriter(File.Create(runtimeConfigJsonFile))))
+                {
+                    writer.Formatting = Formatting.Indented;
+                    json.WriteTo(writer);
+                }
+            }
+        }
+
+        private void WriteFramework(JObject runtimeOptions, LibraryExporter exporter)
+        {
+            var redistPackage = _context.PlatformLibrary;
+            if (redistPackage != null)
+            {
+                var packageName = redistPackage.Identity.Name;
+
+                var redistExport = exporter.GetAllExports()
+                    .FirstOrDefault(e => e.Library.Identity.Name.Equals(packageName));
+                if (redistExport == null)
+                {
+                    throw new InvalidOperationException($"Platform package '{packageName}' was not present in the graph.");
+                }
+                else
+                {
+                    var framework = new JObject(
+                        new JProperty("name", redistExport.Library.Identity.Name),
+                        new JProperty("version", redistExport.Library.Identity.Version.ToNormalizedString()));
+                    runtimeOptions.Add("framework", framework);
+                }
+            }
+        }
+
+        private void WriteRuntimeOptions(JObject runtimeOptions)
+        {
+            if (string.IsNullOrEmpty(_context.ProjectFile.RawRuntimeOptions))
+            {
+                return;
+            }
+
+            var runtimeOptionsFromProjectJson = JObject.Parse(_context.ProjectFile.RawRuntimeOptions);
+            foreach (var runtimeOption in runtimeOptionsFromProjectJson)
+            {
+                runtimeOptions.Add(runtimeOption.Key, runtimeOption.Value);
+            }
+        }
+
+        private void WriteDevRuntimeConfig(LibraryExporter exporter)
+        {
+            if (_context.TargetFramework.IsDesktop())
+            {
+                return;
+            }
+
+            var json = new JObject();
+            var runtimeOptions = new JObject();
+            json.Add("runtimeOptions", runtimeOptions);
+
+            AddAdditionalProbingPaths(runtimeOptions);
+
+            var runtimeConfigDevJsonFile =
+                    Path.Combine(_runtimeOutputPath, _compilerOptions.OutputName + FileNameSuffixes.RuntimeConfigDevJson);
+
+            using (var writer = new JsonTextWriter(new StreamWriter(File.Create(runtimeConfigDevJsonFile))))
+            {
+                writer.Formatting = Formatting.Indented;
+                json.WriteTo(writer);
+            }
+        }
+
+        private void AddAdditionalProbingPaths(JObject runtimeOptions)
+        {
+            var additionalProbingPaths = new JArray(_context.PackagesDirectory);
+            runtimeOptions.Add("additionalProbingPaths", additionalProbingPaths);
+        }
+
+        public void WriteDeps(LibraryExporter exporter)
+        {
+            Directory.CreateDirectory(_runtimeOutputPath);
+
+            var includeCompile = _compilerOptions.PreserveCompilationContext == true;
+
+            var exports = exporter.GetAllExports().ToArray();
+            var dependencyContext = new DependencyContextBuilder().Build(
+                compilerOptions: includeCompile ? _compilerOptions : null,
+                compilationExports: includeCompile ? exports : null,
+                runtimeExports: exports,
+                portable: string.IsNullOrEmpty(_context.RuntimeIdentifier),
+                target: _context.TargetFramework,
+                runtime: _context.RuntimeIdentifier ?? string.Empty);
+
+            var writer = new DependencyContextWriter();
+            var depsJsonFilePath = Path.Combine(_runtimeOutputPath, _compilerOptions.OutputName + FileNameSuffixes.DepsJson);
+            using (var fileStream = File.Create(depsJsonFilePath))
+            {
+                writer.Write(dependencyContext, fileStream);
+            }
         }
 
         public void GenerateBindingRedirects(LibraryExporter exporter)

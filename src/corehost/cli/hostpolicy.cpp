@@ -5,121 +5,64 @@
 #include "args.h"
 #include "trace.h"
 #include "deps_resolver.h"
+#include "fx_muxer.h"
 #include "utils.h"
 #include "coreclr.h"
+#include "cpprest/json.h"
+#include "libhost.h"
+#include "error_codes.h"
 
-enum StatusCode
-{
-    // 0x80 prefix to distinguish from corehost main's error codes.
-    InvalidArgFailure      = 0x81,
-    CoreClrResolveFailure  = 0x82,
-    CoreClrBindFailure     = 0x83,
-    CoreClrInitFailure     = 0x84,
-    CoreClrExeFailure      = 0x85,
-    ResolverInitFailure    = 0x86,
-    ResolverResolveFailure = 0x87,
-};
+hostpolicy_init_t g_init;
 
-// ----------------------------------------------------------------------
-// resolve_clr_path: Resolve CLR Path in priority order
-//
-// Description:
-//   Check if CoreCLR library exists in runtime servicing dir or app
-//   local or DOTNET_HOME directory in that order of priority. If these
-//   fail to locate CoreCLR, then check platform-specific search.
-//
-// Returns:
-//   "true" if path to the CoreCLR dir can be resolved in "clr_path"
-//    parameter. Else, returns "false" with "clr_path" unmodified.
-//
-bool resolve_clr_path(const arguments_t& args, pal::string_t* clr_path)
-{
-    const pal::string_t* dirs[] = {
-        &args.dotnet_runtime_servicing, // DOTNET_RUNTIME_SERVICING
-        &args.app_dir,                  // APP LOCAL
-        &args.dotnet_home               // DOTNET_HOME
-    };
-    for (int i = 0; i < sizeof(dirs) / sizeof(dirs[0]); ++i)
-    {
-        if (dirs[i]->empty())
-        {
-            continue;
-        }
-
-        // App dir should contain coreclr, so skip appending path.
-        pal::string_t cur_dir = *dirs[i];
-        if (dirs[i] != &args.app_dir)
-        {
-            append_path(&cur_dir, _X("runtime"));
-            append_path(&cur_dir, _X("coreclr"));
-        }
-
-        // Found coreclr in priority order.
-        if (coreclr_exists_in_dir(cur_dir))
-        {
-            clr_path->assign(cur_dir);
-            return true;
-        }
-    }
-
-    // Use platform-specific search algorithm
-    pal::string_t home_dir = args.dotnet_home;
-    if (pal::find_coreclr(&home_dir))
-    {
-        clr_path->assign(home_dir);
-        return true;
-    }
-    return false;
-}
-
-int run(const arguments_t& args, const pal::string_t& clr_path)
+int run(const arguments_t& args)
 {
     // Load the deps resolver
-    deps_resolver_t resolver(args);
+    deps_resolver_t resolver(g_init, args);
+
     if (!resolver.valid())
     {
         trace::error(_X("Invalid .deps file"));
         return StatusCode::ResolverInitFailure;
     }
 
-    // Add packages directory
-    pal::string_t packages_dir = args.nuget_packages;
-    if (!pal::directory_exists(packages_dir))
+    pal::string_t clr_path = resolver.resolve_coreclr_dir();
+    if (clr_path.empty() || !pal::realpath(&clr_path))
     {
-        (void)pal::get_default_packages_directory(&packages_dir);
+        trace::error(_X("Could not resolve coreclr path"));
+        return StatusCode::CoreClrResolveFailure;
     }
-    trace::info(_X("Package directory: %s"), packages_dir.empty() ? _X("not specified") : packages_dir.c_str());
+    else
+    {
+        trace::info(_X("CoreCLR directory: %s"), clr_path.c_str());
+    }
 
     probe_paths_t probe_paths;
-    if (!resolver.resolve_probe_paths(args.app_dir, packages_dir, args.dotnet_packages_cache, clr_path, &probe_paths))
+    if (!resolver.resolve_probe_paths(clr_path, &probe_paths))
     {
         return StatusCode::ResolverResolveFailure;
     }
 
     // Build CoreCLR properties
-    const char* property_keys[] = {
+    std::vector<const char*> property_keys = {
         "TRUSTED_PLATFORM_ASSEMBLIES",
         "APP_PATHS",
         "APP_NI_PATHS",
         "NATIVE_DLL_SEARCH_DIRECTORIES",
         "PLATFORM_RESOURCE_ROOTS",
         "AppDomainCompatSwitch",
-        // TODO: pipe this from corehost.json
-        "SERVER_GC",
         // Workaround: mscorlib does not resolve symlinks for AppContext.BaseDirectory dotnet/coreclr/issues/2128
         "APP_CONTEXT_BASE_DIRECTORY",
+        "APP_CONTEXT_DEPS_FILES"
     };
 
     auto tpa_paths_cstr = pal::to_stdstring(probe_paths.tpa);
     auto app_base_cstr = pal::to_stdstring(args.app_dir);
     auto native_dirs_cstr = pal::to_stdstring(probe_paths.native);
-    auto culture_dirs_cstr = pal::to_stdstring(probe_paths.culture);
+    auto resources_dirs_cstr = pal::to_stdstring(probe_paths.resources);
 
-    // Workaround for dotnet/cli Issue #488 and #652
-    pal::string_t server_gc;
-    std::string server_gc_cstr = (pal::getenv(_X("COREHOST_SERVER_GC"), &server_gc) && !server_gc.empty()) ? pal::to_stdstring(server_gc) : "1";
+    std::string deps = pal::to_stdstring(resolver.get_deps_file() + _X(";") + resolver.get_fx_deps_file());
 
-    const char* property_values[] = {
+    std::vector<const char*> property_values = {
         // TRUSTED_PLATFORM_ASSEMBLIES
         tpa_paths_cstr.c_str(),
         // APP_PATHS
@@ -129,16 +72,26 @@ int run(const arguments_t& args, const pal::string_t& clr_path)
         // NATIVE_DLL_SEARCH_DIRECTORIES
         native_dirs_cstr.c_str(),
         // PLATFORM_RESOURCE_ROOTS
-        culture_dirs_cstr.c_str(),
+        resources_dirs_cstr.c_str(),
         // AppDomainCompatSwitch
         "UseLatestBehaviorWhenTFMNotSpecified",
-        // SERVER_GC
-        server_gc_cstr.c_str(),
         // APP_CONTEXT_BASE_DIRECTORY
-        app_base_cstr.c_str()
+        app_base_cstr.c_str(),
+        // APP_CONTEXT_DEPS_FILES,
+        deps.c_str(),
     };
 
-    size_t property_size = sizeof(property_keys) / sizeof(property_keys[0]);
+    for (int i = 0; i < g_init.cfg_keys.size(); ++i)
+    {
+        property_keys.push_back(g_init.cfg_keys[i].c_str());
+        property_values.push_back(g_init.cfg_values[i].c_str());
+    }
+
+    size_t property_size = property_keys.size();
+    assert(property_keys.size() == property_values.size());
+
+    // Add API sets to the process DLL search
+    pal::setup_api_sets(resolver.get_api_sets());
 
     // Bind CoreCLR
     if (!coreclr::bind(clr_path))
@@ -168,8 +121,8 @@ int run(const arguments_t& args, const pal::string_t& clr_path)
     auto hr = coreclr::initialize(
         own_path.c_str(),
         "clrhost",
-        property_keys,
-        property_values,
+        property_keys.data(),
+        property_values.data(),
         property_size,
         &host_handle,
         &domain_id);
@@ -229,24 +182,55 @@ int run(const arguments_t& args, const pal::string_t& clr_path)
     return exit_code;
 }
 
-SHARED_API int corehost_main(const int argc, const pal::char_t* argv[])
+SHARED_API int corehost_load(host_interface_t* init)
 {
     trace::setup();
+    
+    if (!hostpolicy_init_t::init(init, &g_init))
+    {
+        return StatusCode::LibHostInitFailure;
+    }
+    
+    return 0;
+}
+
+SHARED_API int corehost_main(const int argc, const pal::char_t* argv[])
+{
+    if (trace::is_enabled())
+    {
+        trace::info(_X("--- Invoked policy [%s/%s/%s] main = {"),
+            _STRINGIFY(HOST_POLICY_PKG_NAME),
+            _STRINGIFY(HOST_POLICY_PKG_VER),
+            _STRINGIFY(HOST_POLICY_PKG_REL_DIR));
+
+        for (int i = 0; i < argc; ++i)
+        {
+            trace::info(_X("%s"), argv[i]);
+        }
+        trace::info(_X("}"));
+
+        trace::info(_X("Deps file: %s"), g_init.deps_file.c_str());
+        for (const auto& probe : g_init.probe_paths)
+        {
+            trace::info(_X("Additional probe dir: %s"), probe.c_str());
+        }
+    }
 
     // Take care of arguments
     arguments_t args;
-    if (!parse_arguments(argc, argv, args))
+    if (!parse_arguments(g_init.deps_file, g_init.probe_paths, g_init.host_mode, argc, argv, &args))
     {
-        return StatusCode::InvalidArgFailure;
+        return StatusCode::LibHostInvalidArgs;
+    }
+    if (trace::is_enabled())
+    {
+        args.print();
     }
 
-    // Resolve CLR path
-    pal::string_t clr_path;
-    if (!resolve_clr_path(args, &clr_path))
-    {
-        trace::error(_X("Could not resolve coreclr path"));
-        return StatusCode::CoreClrResolveFailure;
-    }
-    pal::realpath(&clr_path);
-    return run(args, clr_path);
+    return run(args);
+}
+
+SHARED_API int corehost_unload()
+{
+    return 0;
 }

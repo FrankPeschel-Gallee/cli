@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-
 using Microsoft.DotNet.ProjectModel;
 using Microsoft.DotNet.Cli.Compiler.Common;
 using Microsoft.DotNet.ProjectModel.Compilation;
@@ -20,34 +19,12 @@ namespace Microsoft.DotNet.Tools.Compiler
 {
     public static class CompilerUtil
     {
-        public static string ResolveCompilerName(ProjectContext context)
-        {
-            var compilerName = context.ProjectFile.CompilerName;
-            compilerName = compilerName ?? "csc";
-
-            return compilerName;
-        }
-
-        private static readonly KeyValuePair<string, string>[] s_compilerNameToLanguageId =
-        {
-            new KeyValuePair<string, string>("csc", "cs"),
-            new KeyValuePair<string, string>("vbc", "vb"),
-            new KeyValuePair<string, string>("fsc", "fs")
-        };
-
         public static string ResolveLanguageId(ProjectContext context)
         {
             var languageId = context.ProjectFile.AnalyzerOptions?.LanguageId;
             if (languageId == null)
             {
-                var compilerName = ResolveCompilerName(context);
-                foreach (var kvp in s_compilerNameToLanguageId)
-                {
-                    if (kvp.Key == compilerName)
-                    {
-                        languageId = kvp.Value;
-                    }
-                }
+                languageId = context.ProjectFile.GetSourceCodeLanguage();
             }
 
             return languageId;
@@ -142,31 +119,10 @@ namespace Microsoft.DotNet.Tools.Compiler
         // used in incremental compilation
         public static IEnumerable<string> GetCompilationSources(ProjectContext project) => project.ProjectFile.Files.SourceFiles;
 
-        // used in incremental compilation for the key file
-        public static CommonCompilerOptions ResolveCompilationOptions(ProjectContext context, string configuration)
-        {
-            var compilationOptions = context.GetLanguageSpecificCompilerOptions(context.TargetFramework, configuration);
-
-            // Path to strong naming key in environment variable overrides path in project.json
-            var environmentKeyFile = Environment.GetEnvironmentVariable(EnvironmentNames.StrongNameKeyFile);
-
-            if (!string.IsNullOrWhiteSpace(environmentKeyFile))
-            {
-                compilationOptions.KeyFile = environmentKeyFile;
-            }
-            else if (!string.IsNullOrWhiteSpace(compilationOptions.KeyFile))
-            {
-                // Resolve full path to key file
-                compilationOptions.KeyFile =
-                    Path.GetFullPath(Path.Combine(context.ProjectFile.ProjectDirectory, compilationOptions.KeyFile));
-            }
-            return compilationOptions;
-        }
-
         //used in incremental precondition checks
         public static IEnumerable<string> GetCommandsInvokedByCompile(ProjectContext project)
         {
-            return new List<string> {ResolveCompilerName(project), "compile"};
+            return new List<string> {project.ProjectFile?.CompilerName, "compile"};
         }
     }
 }

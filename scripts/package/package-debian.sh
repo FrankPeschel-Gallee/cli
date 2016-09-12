@@ -17,43 +17,131 @@ done
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 source "$DIR/../common/_common.sh"
+REPOROOT="$DIR/../.."
 
-if [ "$OSNAME" != "ubuntu" ]; then
-    error "Debian Package build only supported on Ubuntu"
+help(){
+    echo "Usage: $0"
+    echo ""
+    echo "Options:"
+    echo "  --version <version>                Specify a version for the package."
+    echo "  --input <input directory>          Package the entire contents of the directory tree."
+    echo "  --manpages <man pages directory>   Directory containing man pages for the package (Optional)."
+    echo "  --output <output debfile>          The full path to which the package will be written."
+    echo "  --package-name <package name>      Package to identify during installation. Example - 'dotnet-nightly', 'dotnet'"
+    echo "  --framework-nuget-name <name>      The name of the nuget package that produced this shared framework."
+    echo "  --framework-nuget-version <ver>    The versionf of the nuget package that produced this shared framework."
+    echo "  --previous-version-url <url>           Url to the previous version of the debian packge against which to run the upgrade tests."
+    echo "  --obj-root <object root>           Root folder for intermediate objects."
     exit 1
-fi
-
-PACKAGING_ROOT="$REPOROOT/packaging/debian"
-
-OUTPUT_DIR="$REPOROOT/artifacts"
-PACKAGE_LAYOUT_DIR="$OUTPUT_DIR/deb_intermediate"
-PACKAGE_OUTPUT_DIR="$OUTPUT_DIR/packages/debian"
-TEST_STAGE_DIR="$PACKAGE_OUTPUT_DIR/test"
-REPO_BINARIES_DIR="$REPOROOT/artifacts/ubuntu.14.04-x64/stage2"
-MANPAGE_DIR="$REPOROOT/Documentation/manpages"
-
-NIGHTLY_PACKAGE_NAME="dotnet-nightly"
-RELEASE_PACKAGE_NAME="dotnet"
-
-[ -z "$CHANNEL" ] && CHANNEL="dev"
-
-execute_build(){
-    determine_package_name
-    create_empty_debian_layout
-    copy_files_to_debian_layout
-    create_debian_package
 }
 
-determine_package_name(){
-    if [[ "$RELEASE_SUFFIX" == "dev" ]]; then
-        DOTNET_DEB_PACKAGE_NAME=$NIGHTLY_PACKAGE_NAME
-    elif [[ "beta rc1 rc2 rtm" =~ (^| )"$RELEASE_SUFFIX"($| ) ]]; then
-        DOTNET_DEB_PACKAGE_NAME=$RELEASE_PACKAGE_NAME
-    elif [[ "$RELEASE_SUFFIX" == "" ]]; then
-        DOTNET_DEB_PACKAGE_NAME=$RELEASE_PACKAGE_NAME
-    else
-        DOTNET_DEB_PACKAGE_NAME=$NIGHTLY_PACKAGE_NAME
+parseargs(){
+
+    while [[ $# > 0 ]]; do
+        lowerI="$(echo $1 | awk '{print tolower($0)}')"
+        case $lowerI in
+        -m|--manpages)
+            MANPAGE_DIR=$2
+            shift
+            ;;
+        -o|--output)
+            OUTPUT_DEBIAN_FILE=$2
+            shift
+            ;;
+        -i|--input)
+            REPO_BINARIES_DIR=$2
+            shift
+            ;;
+        -p|--package-name)
+            DOTNET_DEB_PACKAGE_NAME=$2
+            shift
+            ;;
+        -v|--version)
+            DOTNET_CLI_VERSION=$2
+            shift
+            ;;
+        --previous-version-url)
+            PREVIOUS_VERSION_URL=$2
+            shift
+            ;;
+        --framework-debian-package-name)
+            SHARED_FRAMEWORK_DEBIAN_PACKAGE_NAME=$2
+            shift
+            ;;
+        --framework-nuget-name)
+            SHARED_FRAMEWORK_NUGET_NAME=$2
+            shift
+            ;;
+        --framework-nuget-version)
+            SHARED_FRAMEWORK_NUGET_VERSION=$2
+            shift
+            ;;
+        --obj-root)
+            OBJECT_DIR=$2
+            shift
+            ;;
+        --help)
+            help
+            ;;
+        *)
+            break
+            ;;
+        esac
+        shift
+    done
+
+    if [ -z "$DOTNET_CLI_VERSION" ]; then
+        echo "Provide a version number. Missing option '--version'" && help
     fi
+
+    if [ -z "$OUTPUT_DEBIAN_FILE" ]; then
+        echo "Provide an output deb. Missing option '--output'" && help
+    fi
+
+    if [ -z "$REPO_BINARIES_DIR" ]; then
+        echo "Provide an input directory. Missing option '--input'" && help
+    fi
+
+    if [ -z "$DOTNET_DEB_PACKAGE_NAME" ]; then
+        echo "Provide an the name for the debian package. Missing option '--package-name'" && help
+    fi
+    
+    if [ -z "$SHARED_FRAMEWORK_NUGET_NAME" ]; then
+        echo "Provide the NuGet name of the targetted Shared Framework. Missing option '--framework-nuget-name'" && help
+    fi
+
+    if [ -z "$PREVIOUS_VERSION_URL" ]; then
+        echo "Provide a URL to the previous debian pacakge (Required for running upgrade tests). Missing option '--previous-version-url'" && help
+    fi
+
+    if [ -z "$SHARED_FRAMEWORK_NUGET_VERSION" ]; then
+        echo "Provide the NuGet version of the targetted Shared Framework. Missing option '--framework-nuget-version'" && help
+    fi
+
+    if [ ! -d "$REPO_BINARIES_DIR" ]; then
+        echo "'$REPO_BINARIES_DIR' - is either missing or not a directory" 1>&2
+        exit 1
+    fi
+
+}
+
+parseargs "$@"
+
+PACKAGING_ROOT="$REPOROOT/packaging/debian"
+PACKAGING_TOOL_DIR="$REPOROOT/tools/DebianPackageTool"
+
+PACKAGE_OUTPUT_DIR="$OBJECT_DIR/deb_output"
+PACKAGE_LAYOUT_DIR="$OBJECT_DIR/deb_intermediate"
+TEST_STAGE_DIR="$OBJECT_DIR/debian_tests"
+
+# remove any residual deb files from earlier builds
+rm -f "$PACKAGE_OUTPUT_DIR/*.deb"
+
+execute_build(){
+    create_empty_debian_layout
+    copy_files_to_debian_layout
+	update_debian_json
+    create_debian_package
 }
 
 execute_test(){
@@ -70,6 +158,7 @@ create_empty_debian_layout(){
     mkdir "$PACKAGE_LAYOUT_DIR/package_root"
     mkdir "$PACKAGE_LAYOUT_DIR/samples"
     mkdir "$PACKAGE_LAYOUT_DIR/docs"
+    mkdir "$PACKAGE_LAYOUT_DIR/debian"
 }
 
 copy_files_to_debian_layout(){
@@ -79,10 +168,17 @@ copy_files_to_debian_layout(){
     cp -a "$REPO_BINARIES_DIR/." "$PACKAGE_LAYOUT_DIR/package_root"
 
     # Copy config file
-    cp "$PACKAGING_ROOT/$DOTNET_DEB_PACKAGE_NAME-debian_config.json" "$PACKAGE_LAYOUT_DIR/debian_config.json"
+    cp "$PACKAGING_ROOT/dotnet-debian_config.json" "$PACKAGE_LAYOUT_DIR/debian_config.json"
 
     # Copy Manpages
-    cp -a "$MANPAGE_DIR/." "$PACKAGE_LAYOUT_DIR/docs"
+    cp -a "$MANPAGE_DIR/sdk/." "$PACKAGE_LAYOUT_DIR/docs"
+
+    # Append Version to all manpage files
+    for manpage in "$PACKAGE_LAYOUT_DIR/docs/"*.1; do mv "$manpage" "${manpage%.1}"; done
+    for manpage in "$PACKAGE_LAYOUT_DIR/docs/"*; do mv "$manpage" "${manpage}-${DOTNET_CLI_VERSION}.1"; done
+
+    # Copy postinstall
+    cp "$PACKAGING_ROOT/postinst" "$PACKAGE_LAYOUT_DIR/debian/postinst"
 }
 
 create_debian_package(){
@@ -90,34 +186,36 @@ create_debian_package(){
 
     mkdir -p "$PACKAGE_OUTPUT_DIR"
     
-    "$PACKAGING_ROOT/package_tool/package_tool" -i "$PACKAGE_LAYOUT_DIR" -o "$PACKAGE_OUTPUT_DIR" -v $DOTNET_CLI_VERSION -n $DOTNET_DEB_PACKAGE_NAME
+    "$PACKAGING_TOOL_DIR/package_tool" -i "$PACKAGE_LAYOUT_DIR" -o "$PACKAGE_OUTPUT_DIR" -v $DOTNET_CLI_VERSION -n "$DOTNET_DEB_PACKAGE_NAME"
+}
+
+update_debian_json()
+{
+    header "Updating debian.json file"
+    sed -i "s/%SHARED_FRAMEWORK_DEBIAN_PACKAGE_NAME%/$SHARED_FRAMEWORK_DEBIAN_PACKAGE_NAME/g" "$PACKAGE_LAYOUT_DIR"/debian_config.json
+    sed -i "s/%SHARED_FRAMEWORK_NUGET_NAME%/$SHARED_FRAMEWORK_NUGET_NAME/g" "$PACKAGE_LAYOUT_DIR"/debian_config.json
+    sed -i "s/%SHARED_FRAMEWORK_NUGET_VERSION%/$SHARED_FRAMEWORK_NUGET_VERSION/g" "$PACKAGE_LAYOUT_DIR"/debian_config.json
+    sed -i "s/%SDK_NUGET_VERSION%/$DOTNET_CLI_VERSION/g" "$PACKAGE_LAYOUT_DIR"/debian_config.json
 }
 
 test_debian_package(){
     header "Testing debian package"
     
-    # Set LAST_VERSION_URL to enable upgrade tests
-    export LAST_VERSION_URL="https://dotnetcli.blob.core.windows.net/dotnet/$CHANNEL/Installers/Latest/dotnet-ubuntu-x64.latest.deb"
-
-    rm -rf $TEST_STAGE_DIR
-    git clone https://github.com/sstephenson/bats.git $TEST_STAGE_DIR
-    
-    $TEST_STAGE_DIR/bin/bats $PACKAGE_OUTPUT_DIR/test_package.bats
-
-    # E2E Testing of package surface area
-    # Disabled: https://github.com/dotnet/cli/issues/381
-    # run_e2e_test
+    install_bats
+    run_package_integrity_tests
 }
 
-run_e2e_test(){
-    set +e    
-    sudo dpkg -i $DEBIAN_FILE
-    $REPOROOT/scripts/test/e2e-test.sh
-    result=$?
-    sudo dpkg -r dotnet
-    set -e
-    
-    return result
+install_bats() {
+    rm -rf $TEST_STAGE_DIR
+    git clone https://github.com/sstephenson/bats.git $TEST_STAGE_DIR
+}
+
+run_package_integrity_tests() {
+    # Set LAST_VERSION_URL to enable upgrade tests
+    # Temporarily disable last version until we have one with shared fx
+    # export LAST_VERSION_URL="$PREVIOUS_VERSION_URL"
+
+    $TEST_STAGE_DIR/bin/bats $PACKAGE_OUTPUT_DIR/test_package.bats
 }
 
 execute_build
@@ -126,5 +224,4 @@ DEBIAN_FILE=$(find $PACKAGE_OUTPUT_DIR -iname "*.deb")
 
 execute_test
 
-# Publish
-$REPOROOT/scripts/publish/publish.sh $DEBIAN_FILE 
+mv -f "$DEBIAN_FILE" "$OUTPUT_DEBIAN_FILE"

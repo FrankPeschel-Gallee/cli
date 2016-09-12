@@ -1,34 +1,28 @@
 {
   "version": "1.0.0-*",
-
   "dependencies": {
-    "NETStandard.Library": "1.0.0-rc2-23810",
-
-    "Microsoft.DotNet.Tools.Tests.Utilities": { "target": "project" },
-    "Microsoft.DotNet.Cli.Utils": {
-      "target": "project",
-      "type": "build"
+    "Microsoft.NETCore.App": {
+      "type": "platform",
+      "version": "1.0.0-rc2-*"
     },
-
+    "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24015",
+    "Microsoft.DotNet.TestFramework": "1.0.0-*",
+    "Microsoft.DotNet.Tools.Tests.Utilities": {
+      "target": "project"
+    },
     "xunit": "2.1.0",
-    "xunit.netcore.extensions": "1.0.0-prerelease-*",
-    "dotnet-test-xunit": "1.0.0-dev-48273-16"
+    "xunit.netcore.extensions": "1.0.0-prerelease-00206",
+    "dotnet-test-xunit": "1.0.0-dev-140469-38",
+    "System.Runtime.InteropServices.RuntimeInformation": "4.0.0-rc2-24015"
   },
-
   "frameworks": {
-    "dnxcore50": {
-      "imports": "portable-net45+win8"
+    "netcoreapp1.0": {
+      "imports": [
+        "netstandardapp1.5",
+        "dnxcore50",
+        "portable-net45+win8"
+      ]
     }
   },
-
-  "content": [
-    "../../TestAssets/TestProjects/TestApp/**/*",
-    "../../TestAssets/TestProjects/TestLibrary/**/*",
-    "../../TestAssets/TestProjects/CompileFail/**/*",
-    "../../TestAssets/TestProjects/TestBindingRedirectGeneration/**/*",
-    "../../TestAssets/TestProjects/TestAppCompilationContext/**/*",
-    "../../TestAssets/TestProjects/TestAppWithContents/**/*"
-  ],
-
   "testRunner": "xunit"
 }

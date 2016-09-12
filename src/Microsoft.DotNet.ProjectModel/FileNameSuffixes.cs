@@ -1,21 +1,29 @@
 using System;
-using System.Runtime.InteropServices;
+using Microsoft.Extensions.PlatformAbstractions;
 
 namespace Microsoft.DotNet.ProjectModel
 {
     public static class FileNameSuffixes
     {
-        public const string Deps = ".deps";
+        public const string DepsJson = ".deps.json";
+        public const string RuntimeConfigJson = ".runtimeconfig.json";
+        public const string RuntimeConfigDevJson = ".runtimeconfig.dev.json";
 
         public static PlatformFileNameSuffixes CurrentPlatform
         {
             get
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) { return Windows; }
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) { return Linux; }
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) { return OSX; }
-
-                throw new InvalidOperationException("Unknown Platform");
+                switch (PlatformServices.Default.Runtime.OperatingSystemPlatform)
+                {
+                    case Platform.Windows:
+                        return Windows;
+                    case Platform.Darwin:
+                        return OSX;
+                    case Platform.Linux:
+                        return Linux;
+                    default:
+                        throw new InvalidOperationException("Unknown Platform");
+                }
             }
         }
 

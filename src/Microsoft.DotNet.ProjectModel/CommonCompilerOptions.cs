@@ -27,6 +27,8 @@ namespace Microsoft.DotNet.ProjectModel
 
         public bool? PublicSign { get; set; }
 
+        public string DebugType { get; set; }
+
         public bool? EmitEntryPoint { get; set; }
 
         public bool? PreserveCompilationContext { get; set; }
@@ -36,6 +38,8 @@ namespace Microsoft.DotNet.ProjectModel
         public IEnumerable<string> SuppressWarnings { get; set; }
 
         public IEnumerable<string> AdditionalArguments { get; set; }
+
+        public string OutputName { get;set; }
 
         public override bool Equals(object obj)
         {
@@ -49,16 +53,18 @@ namespace Microsoft.DotNet.ProjectModel
                    KeyFile == other.KeyFile &&
                    DelaySign == other.DelaySign &&
                    PublicSign == other.PublicSign &&
+                   DebugType == other.DebugType &&
                    EmitEntryPoint == other.EmitEntryPoint &&
                    GenerateXmlDocumentation == other.GenerateXmlDocumentation &&
                    PreserveCompilationContext == other.PreserveCompilationContext &&
                    EnumerableEquals(Defines, other.Defines) &&
                    EnumerableEquals(SuppressWarnings, other.SuppressWarnings) &&
-                   EnumerableEquals(AdditionalArguments, other.AdditionalArguments);
+                   EnumerableEquals(AdditionalArguments, other.AdditionalArguments) &&
+                   OutputName == other.OutputName;
         }
 
         private static bool EnumerableEquals(IEnumerable<string> left, IEnumerable<string> right)
-            => Enumerable.SequenceEqual(left ?? Array.Empty<string>(), right ?? Array.Empty<string>());
+            => Enumerable.SequenceEqual(left ?? EmptyArray<string>.Value, right ?? EmptyArray<string>.Value);
 
         public override int GetHashCode()
         {
@@ -69,7 +75,7 @@ namespace Microsoft.DotNet.ProjectModel
         {
             if (@new != null)
             {
-                old = old ?? Array.Empty<string>();
+                old = old ?? EmptyArray<string>.Value;
                 return old.Concat(@new).Distinct().ToArray();
             }
             return old;
@@ -131,6 +137,11 @@ namespace Microsoft.DotNet.ProjectModel
                     result.PublicSign = option.PublicSign;
                 }
 
+                if (option.DebugType != null)
+                {
+                    result.DebugType = option.DebugType;
+                }
+
                 if (option.EmitEntryPoint != null)
                 {
                     result.EmitEntryPoint = option.EmitEntryPoint;
@@ -144,6 +155,11 @@ namespace Microsoft.DotNet.ProjectModel
                 if (option.GenerateXmlDocumentation != null)
                 {
                     result.GenerateXmlDocumentation = option.GenerateXmlDocumentation;
+                }
+
+                if (option.OutputName != null)
+                {
+                    result.OutputName = option.OutputName;
                 }
             }
 

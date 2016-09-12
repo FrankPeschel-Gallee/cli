@@ -24,7 +24,7 @@ namespace Microsoft.DotNet.Tools.Compiler.Native
 
         private readonly string[] _appdeplibs = 
             {
-                "libSystem.Native.a"
+                "System.Native.a"
             };
 
         public LinuxRyuJitCompileStep(NativeCompileSettings config)
@@ -69,6 +69,13 @@ namespace Microsoft.DotNet.Tools.Compiler.Native
             // ILC SDK Libs
             var ilcSdkLibPath = Path.Combine(config.IlcSdkPath, "sdk");
             argsList.AddRange(_ilcSdkLibs.Select(lib => Path.Combine(ilcSdkLibPath, lib)));
+
+            // Optional linker script
+            var linkerScriptFile = Path.Combine(ilcSdkLibPath, "linkerscript");
+            if (File.Exists(linkerScriptFile))
+            {
+                argsList.Add(linkerScriptFile);
+            }
 
             // AppDep Libs
             var baseAppDepLibPath = Path.Combine(config.AppDepSDKPath, "CPPSdk/ubuntu.14.04", config.Architecture.ToString());

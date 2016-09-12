@@ -11,21 +11,24 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
     public sealed class BuildCommand : TestCommand
     {
         private Project _project;
-        private string _projectPath;
-        private string _outputDirectory;
-        private string _buidBasePathDirectory;
-        private string _configuration;
-        private string _framework;
-        private bool _noHost;
-        private bool _native;
-        private string _architecture;
-        private string _ilcArgs;
-        private string _ilcPath;
-        private string _appDepSDKPath;
-        private bool _nativeCppMode;
-        private string _cppCompilerFlags;
-        private bool _buildProfile;
-        private bool _noIncremental;
+        private readonly string _projectPath;
+        private readonly string _outputDirectory;
+        private readonly string _buildBasePathDirectory;
+        private readonly string _configuration;
+        private readonly string _framework;
+        private readonly string _versionSuffix;
+        private readonly bool _noHost;
+        private readonly bool _native;
+        private readonly string _architecture;
+        private readonly string _ilcArgs;
+        private readonly string _ilcPath;
+        private readonly string _appDepSDKPath;
+        private readonly bool _nativeCppMode;
+        private readonly string _cppCompilerFlags;
+        private readonly bool _buildProfile;
+        private readonly bool _noIncremental;
+        private readonly bool _noDependencies;
+        private readonly string _runtime;
 
         private string OutputOption
         {
@@ -41,9 +44,9 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
         {
             get
             {
-                return _buidBasePathDirectory == string.Empty ?
+                return _buildBasePathDirectory == string.Empty ?
                                            "" :
-                                           $"-b {_buidBasePathDirectory}";
+                                           $"-b {_buildBasePathDirectory}";
             }
         }
 
@@ -66,6 +69,16 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             }
         }
 
+        private string VersionSuffixOption
+        {
+            get
+            {
+                return _versionSuffix == string.Empty ?
+                                    "" :
+                                    $"--version-suffix {_versionSuffix}";
+            }
+        }
+
         private string NoHostOption
         {
             get
@@ -83,6 +96,16 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
                 return _native ?
                         "--native" :
                         "";
+            }
+        }
+
+        private string RuntimeOption
+        {
+            get
+            {
+                return _runtime == string.Empty ?
+                    "" :
+                    $"--runtime {_runtime}";
             }
         }
 
@@ -166,12 +189,24 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             }
         }
 
+        private string NoDependencies
+        {
+            get
+            {
+                return _noDependencies ?
+                    "--no-dependencies" :
+                    "";
+            }
+        }
+
         public BuildCommand(
             string projectPath,
             string output="",
-            string buidBasePath="",
+            string buildBasePath = "",
             string configuration="",
             string framework="",
+            string runtime="",
+            string versionSuffix="",
             bool noHost=false,
             bool native=false,
             string architecture="",
@@ -181,18 +216,19 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             bool nativeCppMode=false,
             string cppCompilerFlags="",
             bool buildProfile=true,
-            bool noIncremental=false
-            )
+            bool noIncremental=false,
+            bool noDependencies=false)
             : base("dotnet")
         {
-
             _projectPath = projectPath;
             _project = ProjectReader.GetProject(projectPath);
 
             _outputDirectory = output;
-            _buidBasePathDirectory = buidBasePath;
+            _buildBasePathDirectory = buildBasePath;
             _configuration = configuration;
+            _versionSuffix = versionSuffix;
             _framework = framework;
+            _runtime = runtime;
             _noHost = noHost;
             _native = native;
             _architecture = architecture;
@@ -203,6 +239,7 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             _cppCompilerFlags = cppCompilerFlags;
             _buildProfile = buildProfile;
             _noIncremental = noIncremental;
+            _noDependencies = noDependencies;
         }
 
         public override CommandResult Execute(string args = "")
@@ -217,16 +254,24 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             return base.ExecuteWithCapturedOutput(args);
         }
 
+        public string GetPortableOutputName()
+        {
+            return $"{_project.Name}.dll";
+        }
+
         public string GetOutputExecutableName()
         {
-            var result = _project.Name;
-            result += RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
-            return result;
+            return _project.Name + GetExecutableExtension();
+        }
+
+        public string GetExecutableExtension()
+        {
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
         }
 
         private string BuildArgs()
         {
-            return $"{BuildProfile} {NoIncremental} \"{_projectPath}\" {OutputOption} {BuildBasePathOption} {ConfigurationOption} {FrameworkOption} {NoHostOption} {NativeOption} {ArchitectureOption} {IlcArgsOption} {IlcPathOption} {AppDepSDKPathOption} {NativeCppModeOption} {CppCompilerFlagsOption}";
+            return $"{BuildProfile} {NoDependencies} {NoIncremental} \"{_projectPath}\" {OutputOption} {BuildBasePathOption} {ConfigurationOption} {FrameworkOption} {RuntimeOption} {VersionSuffixOption} {NoHostOption} {NativeOption} {ArchitectureOption} {IlcArgsOption} {IlcPathOption} {AppDepSDKPathOption} {NativeCppModeOption} {CppCompilerFlagsOption}";
         }
     }
 }

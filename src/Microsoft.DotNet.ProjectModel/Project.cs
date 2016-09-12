@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.DotNet.ProjectModel.Files;
 using Microsoft.DotNet.ProjectModel.Graph;
 using NuGet.Frameworks;
@@ -35,7 +36,7 @@ namespace Microsoft.DotNet.ProjectModel
                 return Path.GetDirectoryName(ProjectFilePath);
             }
         }
-        
+
         public AnalyzerOptions AnalyzerOptions { get; set; }
 
         public string Name { get; set; }
@@ -88,8 +89,10 @@ namespace Microsoft.DotNet.ProjectModel
 
         public IDictionary<string, IEnumerable<string>> Scripts { get; } = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
 
-        public bool IsTestProject => !string.IsNullOrEmpty(TestRunner);
+        public string RawRuntimeOptions { get; set; }
 
+        public bool IsTestProject => !string.IsNullOrEmpty(TestRunner);
+        
         public IEnumerable<TargetFrameworkInformation> GetTargetFrameworks()
         {
             return _targetFrameworks.Values;
@@ -108,7 +111,14 @@ namespace Microsoft.DotNet.ProjectModel
             var targetFrameworkOptions = targetFramework != null ? GetCompilerOptions(targetFramework) : null;
 
             // Combine all of the options
-            return CommonCompilerOptions.Combine(rootOptions, configurationOptions, targetFrameworkOptions);
+            var compilerOptions = CommonCompilerOptions.Combine(rootOptions, configurationOptions, targetFrameworkOptions);
+
+            if (compilerOptions.OutputName == null)
+            {
+                compilerOptions.OutputName = Name;
+            }
+
+            return compilerOptions;
         }
 
         public TargetFrameworkInformation GetTargetFramework(NuGetFramework targetFramework)
@@ -124,12 +134,12 @@ namespace Microsoft.DotNet.ProjectModel
 
         public bool HasRuntimeOutput(string configuration)
         {
-
             var compilationOptions = GetCompilerOptions(targetFramework: null, configurationName: configuration);
 
             // TODO: Make this opt in via another mechanism
             return compilationOptions.EmitEntryPoint.GetValueOrDefault() || IsTestProject;
         }
+
         private CommonCompilerOptions GetCompilerOptions()
         {
             return _defaultCompilerOptions;

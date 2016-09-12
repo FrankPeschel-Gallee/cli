@@ -1,29 +1,36 @@
 ﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
+using Microsoft.DotNet.Cli.Utils;
+using Microsoft.DotNet.ProjectModel;
+using Microsoft.Extensions.PlatformAbstractions;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Microsoft.DotNet.Cli.Utils;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
 
 namespace Microsoft.DotNet.Tools.Test.Utilities
 {
     public sealed class PublishCommand : TestCommand
     {
-        private Project _project;
-        private string _path;
-        private string _framework;
-        private string _runtime;
-        private string _config;
-        private string _output;
+        private const string PublishSubfolderName = "publish";
 
-        public PublishCommand(string projectPath, string framework="", string runtime="", string output="", string config="")
+        private readonly Project _project;
+        private readonly string _path;
+        private readonly string _framework;
+        private readonly string _runtime;
+        private readonly string _config;
+        private readonly bool _noBuild;
+        private readonly string _output;
+        private readonly string _buidBasePathDirectory;
+
+        public PublishCommand(string projectPath,
+            string framework = "",
+            string runtime = "",
+            string output = "",
+            string config = "",
+            bool noBuild = false,
+            string buildBasePath = "")
             : base("dotnet")
         {
             _path = projectPath;
@@ -32,9 +39,17 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             _runtime = runtime;
             _output = output;
             _config = config;
+            _noBuild = noBuild;
+            _buidBasePathDirectory = buildBasePath;
         }
 
-        public override CommandResult Execute(string args="")
+        public override Task<CommandResult> ExecuteAsync(string args = "")
+        {
+            args = $"publish {BuildArgs()} {args}";
+            return base.ExecuteAsync(args);
+        }
+
+        public override CommandResult Execute(string args = "")
         {
             args = $"publish {BuildArgs()} {args}";
             return base.Execute(args);
@@ -46,68 +61,61 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             return base.ExecuteWithCapturedOutput(args);
         }
 
-        public string ProjectName
-        {
-            get
-            {
-                return _project.Name;
-            }
-        }
+        public string ProjectName => _project.Name;
 
-        private string BuildRelativeOutputPath()
+        private string BuildRelativeOutputPath(bool portable)
         {
             // lets try to build an approximate output path
             string config = string.IsNullOrEmpty(_config) ? "Debug" : _config;
             string framework = string.IsNullOrEmpty(_framework) ?
                 _project.GetTargetFrameworks().First().FrameworkName.GetShortFolderName() : _framework;
-            string runtime = string.IsNullOrEmpty(_runtime) ? PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier() : _runtime;
-            
-            string output = Path.Combine(config, framework, runtime);
-
-            return output;
+            if (!portable)
+            {
+                var runtime = string.IsNullOrEmpty(_runtime) ? PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier() : _runtime;
+                return Path.Combine(config, framework, runtime, PublishSubfolderName);
+            }
+            else
+            {
+                return Path.Combine(config, framework, PublishSubfolderName);
+            }
         }
 
-        public DirectoryInfo GetOutputDirectory()
+        public DirectoryInfo GetOutputDirectory(bool portable = false)
         {
             if (!string.IsNullOrEmpty(_output))
             {
                 return new DirectoryInfo(_output);
             }
 
-            string output = Path.Combine(_project.ProjectDirectory, "bin", BuildRelativeOutputPath());
+            string output = Path.Combine(_project.ProjectDirectory, "bin", BuildRelativeOutputPath(portable));
             return new DirectoryInfo(output);
+        }
+
+        public string GetPortableOutputName()
+        {
+            return $"{_project.Name}.dll";
         }
 
         public string GetOutputExecutable()
         {
-            var result = _project.Name;
-            result += RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
-            return result;
+            return _project.Name + GetExecutableExtension();
+        }
+
+        public string GetExecutableExtension()
+        {
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "";
         }
 
         private string BuildArgs()
         {
-            return $"{_path} {GetFrameworkOption()} {GetRuntimeOption()} {GetOutputOption()} {GetConfigOption()}";
+            return $"{_path} {FrameworkOption} {RuntimeOption} {OutputOption} {ConfigOption} {NoBuildFlag} {BuildBasePathOption}";
         }
 
-        private string GetFrameworkOption()
-        {
-            return string.IsNullOrEmpty(_framework) ? "" : $"-f {_framework}";
-        }
-
-        private string GetRuntimeOption()
-        {
-            return string.IsNullOrEmpty(_runtime) ? "" : $"-r {_runtime}";
-        }
-
-        private string GetOutputOption()
-        {
-            return string.IsNullOrEmpty(_output) ? "" : $"-o \"{_output}\"";
-        }
-
-        private string GetConfigOption()
-        {
-            return string.IsNullOrEmpty(_config) ? "" : $"-c {_output}";
-        }
+        private string FrameworkOption => string.IsNullOrEmpty(_framework) ? "" : $"-f {_framework}";
+        private string RuntimeOption => string.IsNullOrEmpty(_runtime) ? "" : $"-r {_runtime}";
+        private string OutputOption => string.IsNullOrEmpty(_output) ? "" : $"-o \"{_output}\"";
+        private string ConfigOption => string.IsNullOrEmpty(_config) ? "" : $"-c {_output}";
+        private string NoBuildFlag => _noBuild ? "--no-build" :"";
+        private string BuildBasePathOption => string.IsNullOrEmpty(_buidBasePathDirectory) ? "" : $"-b {_buidBasePathDirectory}";
     }
 }

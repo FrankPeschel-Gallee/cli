@@ -3,7 +3,10 @@
 
 using System;
 using System.IO;
+using Microsoft.DotNet.Cli.Utils;
+using Microsoft.DotNet.TestFramework;
 using Microsoft.DotNet.Tools.Test.Utilities;
+using FluentAssertions;
 using Xunit;
 
 namespace Microsoft.DotNet.Tools.Compiler.Tests
@@ -25,7 +28,7 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
             root.CopyFile(Path.Combine(_testProjectsRoot, "global.json"));
 
             var testLibDir = root.CreateDirectory("TestLibrary");
-            var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestLibrary");
+            var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestAppWithLibrary", "TestLibrary");
 
             CopyProjectToTempDir(sourceTestLibDir, testLibDir);
 
@@ -71,21 +74,115 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
 
         [Fact]
         public void LibraryWithAnalyzer()
-        {            
+        {
             var root = Temp.CreateDirectory();
             var testLibDir = root.CreateDirectory("TestLibraryWithAnalyzer");
             var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestLibraryWithAnalyzer");
 
             CopyProjectToTempDir(sourceTestLibDir, testLibDir);
-            
+
             // run compile
             var outputDir = Path.Combine(testLibDir.Path, "bin");
             var testProject = GetProjectPath(testLibDir);
             var buildCmd = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
             var result = buildCmd.ExecuteWithCapturedOutput();
             result.Should().Pass();
-            
+
             Assert.Contains("CA1018", result.StdErr);
+        }
+
+        [Fact]
+        public void CompilingAppWithPreserveCompilationContextWithSpaceInThePathShouldSucceed()
+        {
+            var root = Temp.CreateDirectory();
+
+            var spaceBufferDirectory = root.CreateDirectory("space directory");
+            var testAppDir = spaceBufferDirectory.CreateDirectory("TestAppCompilationContext");
+
+            CopyProjectToTempDir(Path.Combine(_testProjectsRoot, "TestAppCompilationContext"), testAppDir);
+
+            var testProjectDir = Path.Combine(_testProjectsRoot, "TestAppCompilationContext", "TestApp");
+            var testProject = Path.Combine(testProjectDir, "project.json");
+
+            var buildCommand = new BuildCommand(testProject);
+
+            buildCommand.Execute().Should().Pass();
+        }
+
+        [Fact]
+        public void ContentFilesAreCopied()
+        {
+            var testInstance = TestAssetsManager.CreateTestInstance("TestAppWithContentPackage")
+                                                .WithLockFiles();
+
+            var root = testInstance.TestRoot;
+
+            // run compile
+            var outputDir = Path.Combine(root, "bin");
+            var testProject = ProjectUtils.GetProjectJson(root, "TestAppWithContentPackage");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var result = buildCommand.ExecuteWithCapturedOutput();
+            result.Should().Pass();
+
+            result = Command.Create(Path.Combine(outputDir, "AppWithContentPackage" + buildCommand.GetExecutableExtension()), new string [0])
+                .CaptureStdErr()
+                .CaptureStdOut()
+                .Execute();
+            result.Should().Pass();
+
+            // verify the output xml file
+            new DirectoryInfo(outputDir).Sub("scripts").Should()
+                .Exist()
+                .And.HaveFile("run.cmd");
+            new DirectoryInfo(outputDir).Should()
+                .HaveFile("config.xml");
+            // verify embedded resources
+            result.StdOut.Should().Contain("AppWithContentPackage.dnf.png");
+            result.StdOut.Should().Contain("AppWithContentPackage.ui.png");
+            // verify 'all' language files not included
+            result.StdOut.Should().NotContain("AppWithContentPackage.dnf_all.png");
+            result.StdOut.Should().NotContain("AppWithContentPackage.ui_all.png");
+            // verify classes
+            result.StdOut.Should().Contain("AppWithContentPackage.Foo");
+            result.StdOut.Should().Contain("MyNamespace.Util");
+        }
+
+        [Fact]
+        public void CanSetOutputAssemblyNameForLibraries()
+        {
+            var testInstance =
+                TestAssetsManager
+                    .CreateTestInstance("LibraryWithOutputAssemblyName")
+                    .WithLockFiles();
+
+            var root = testInstance.TestRoot;
+            var outputDir = Path.Combine(root, "bin");
+            var testProject = ProjectUtils.GetProjectJson(root, "LibraryWithOutputAssemblyName");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var result = buildCommand.ExecuteWithCapturedOutput();
+            result.Should().Pass();
+
+            new DirectoryInfo(outputDir).Should().HaveFiles(new [] { "MyLibrary.dll" });
+        }
+
+        [Fact]
+        public void CanSetOutputAssemblyNameForApps()
+        {
+            var testInstance =
+                TestAssetsManager
+                    .CreateTestInstance("AppWithOutputAssemblyName")
+                    .WithLockFiles();
+
+            var root = testInstance.TestRoot;
+            var outputDir = Path.Combine(root, "bin");
+            var testProject = ProjectUtils.GetProjectJson(root, "AppWithOutputAssemblyName");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var result = buildCommand.ExecuteWithCapturedOutput();
+            result.Should().Pass();
+
+            new DirectoryInfo(outputDir).Should().HaveFiles(
+                new [] { "MyApp.dll", "MyApp" + buildCommand.GetExecutableExtension(),
+                    "MyApp.runtimeconfig.json", "MyApp.deps.json" });
         }
 
         private void CopyProjectToTempDir(string projectDir, TempDirectory tempDir)

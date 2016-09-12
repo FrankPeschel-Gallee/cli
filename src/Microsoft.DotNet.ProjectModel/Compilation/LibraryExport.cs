@@ -15,9 +15,9 @@ namespace Microsoft.DotNet.ProjectModel.Compilation
         public LibraryDescription Library { get; }
 
         /// <summary>
-        /// Gets a list of fully-qualified paths to MSIL binaries required to run
+        /// Gets a list of MSIL binaries required to run
         /// </summary>
-        public IEnumerable<LibraryAsset> RuntimeAssemblies { get; }
+        public IEnumerable<LibraryAssetGroup> RuntimeAssemblyGroups { get; }
 
         /// <summary>
         /// Non assembly runtime assets.
@@ -25,9 +25,9 @@ namespace Microsoft.DotNet.ProjectModel.Compilation
         public IEnumerable<LibraryAsset> RuntimeAssets { get; }
 
         /// <summary>
-        /// Gets a list of fully-qualified paths to native binaries required to run
+        /// Gets a list of native binaries required to run
         /// </summary>
-        public IEnumerable<LibraryAsset> NativeLibraries { get; }
+        public IEnumerable<LibraryAssetGroup> NativeLibraryGroups { get; }
 
         /// <summary>
         /// Gets a list of fully-qualified paths to MSIL metadata references
@@ -35,30 +35,44 @@ namespace Microsoft.DotNet.ProjectModel.Compilation
         public IEnumerable<LibraryAsset> CompilationAssemblies { get; }
 
         /// <summary>
+        /// Get a list of embedded resource files provided by this export.
+        /// </summary>
+        public IEnumerable<LibraryAsset> EmbeddedResources { get; }
+
+        /// <summary>
         /// Gets a list of fully-qualified paths to source code file references
         /// </summary>
-        public IEnumerable<string> SourceReferences { get; }
+        public IEnumerable<LibraryAsset> SourceReferences { get; }
 
         /// <summary>
         /// Get a list of analyzers provided by this export.
         /// </summary>
         public IEnumerable<AnalyzerReference> AnalyzerReferences { get; }
 
+        /// <summary>
+        /// Get a list of resource assemblies provided by this export.
+        /// </summary>
+        public IEnumerable<LibraryResourceAssembly> ResourceAssemblies { get; }
+
         public LibraryExport(LibraryDescription library,
                              IEnumerable<LibraryAsset> compileAssemblies,
-                             IEnumerable<string> sourceReferences,
-                             IEnumerable<LibraryAsset> runtimeAssemblies,
+                             IEnumerable<LibraryAsset> sourceReferences,
+                             IEnumerable<LibraryAssetGroup> runtimeAssemblyGroups,
                              IEnumerable<LibraryAsset> runtimeAssets,
-                             IEnumerable<LibraryAsset> nativeLibraries,
-                             IEnumerable<AnalyzerReference> analyzers)
+                             IEnumerable<LibraryAssetGroup> nativeLibraryGroups,
+                             IEnumerable<LibraryAsset> embeddedResources,
+                             IEnumerable<AnalyzerReference> analyzers,
+                             IEnumerable<LibraryResourceAssembly> resourceAssemblies)
         {
             Library = library;
             CompilationAssemblies = compileAssemblies;
             SourceReferences = sourceReferences;
-            RuntimeAssemblies = runtimeAssemblies;
+            RuntimeAssemblyGroups = runtimeAssemblyGroups;
             RuntimeAssets = runtimeAssets;
-            NativeLibraries = nativeLibraries;
+            NativeLibraryGroups = nativeLibraryGroups;
+            EmbeddedResources = embeddedResources;
             AnalyzerReferences = analyzers;
+            ResourceAssemblies = resourceAssemblies;
         }
 
         private string DebuggerDisplay => Library.Identity.ToString();

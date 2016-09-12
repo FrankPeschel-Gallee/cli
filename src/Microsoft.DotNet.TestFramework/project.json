@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0-*",
+  "description": "Microsoft.DotNet.TestFramework Class Library",
+  "tags": [
+    ""
+  ],
+  "projectUrl": "",
+  "licenseUrl": "",
+  "dependencies": {
+    "Microsoft.DotNet.Cli.Utils": "1.0.0-*"
+  },
+  "frameworks": {
+    "netstandard1.5": {
+      "imports": [
+        "portable-net45+wp80+win8+wpa81+dnxcore50"
+      ]
+    }
+  }
+}

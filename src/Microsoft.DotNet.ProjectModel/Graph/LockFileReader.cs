@@ -14,14 +14,14 @@ using NuGet.Versioning;
 namespace Microsoft.DotNet.ProjectModel.Graph
 {
     public static class LockFileReader
-    {
-        public static LockFile Read(string lockFilePath)
+    {        
+        public static LockFile Read(string lockFilePath, bool designTime)
         {
-            using (var stream = new FileStream(lockFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var stream = ResilientFileStreamOpener.OpenFile(lockFilePath))
             {
                 try
                 {
-                    return Read(lockFilePath, stream);
+                    return Read(lockFilePath, stream, designTime);
                 }
                 catch (FileFormatException ex)
                 {
@@ -34,21 +34,31 @@ namespace Microsoft.DotNet.ProjectModel.Graph
             }
         }
 
-        internal static LockFile Read(string lockFilePath, Stream stream)
+        public static LockFile Read(string lockFilePath, Stream stream, bool designTime)
         {
             try
             {
                 var reader = new StreamReader(stream);
                 var jobject = JsonDeserializer.Deserialize(reader) as JsonObject;
 
-                if (jobject != null)
-                {
-                    return ReadLockFile(lockFilePath, jobject);
-                }
-                else
+                if (jobject == null)
                 {
                     throw new InvalidDataException();
                 }
+
+                var lockFile = ReadLockFile(lockFilePath, jobject);
+                
+                if (!designTime)
+                {
+                    var patcher = new LockFilePatcher(lockFile);
+                    patcher.Patch();
+                }
+
+                return lockFile;
+            }
+            catch (LockFilePatchingException)
+            {
+                throw;
             }
             catch
             {
@@ -57,6 +67,36 @@ namespace Microsoft.DotNet.ProjectModel.Graph
                 {
                     Version = int.MinValue
                 };
+            }
+        }
+
+        public static ExportFile ReadExportFile(string fragmentLockFilePath)
+        {
+            using (var stream = ResilientFileStreamOpener.OpenFile(fragmentLockFilePath))
+            {
+                try
+                {
+                    var rootJObject = JsonDeserializer.Deserialize(new StreamReader(stream)) as JsonObject;
+
+                    if (rootJObject == null)
+                    {
+                        throw new InvalidDataException();
+                    }
+
+                    var version = ReadInt(rootJObject, "version", defaultValue: int.MinValue);
+                    var exports = ReadObject(rootJObject.ValueAsJsonObject("exports"), ReadTargetLibrary);
+
+                    return new ExportFile(fragmentLockFilePath, version, exports);
+
+                }
+                catch (FileFormatException ex)
+                {
+                    throw ex.WithFilePath(fragmentLockFilePath);
+                }
+                catch (Exception ex)
+                {
+                    throw FileFormatException.Create(ex, fragmentLockFilePath);
+                }
             }
         }
 
@@ -105,12 +145,19 @@ namespace Microsoft.DotNet.ProjectModel.Graph
                 }
                 else if (type == "project")
                 {
-                    lockFile.ProjectLibraries.Add(new LockFileProjectLibrary
+                    var projectLibrary = new LockFileProjectLibrary
                     {
                         Name = name,
-                        Version = version,
-                        Path = ReadString(value.Value("path"))
-                    });
+                        Version = version
+                    };
+
+                    var pathValue = value.Value("path");
+                    projectLibrary.Path = pathValue == null ? null : ReadString(pathValue);
+
+                    var buildTimeDependencyValue = value.Value("msbuildProject");
+                    projectLibrary.MSBuildProject = buildTimeDependencyValue == null ? null : ReadString(buildTimeDependencyValue);
+
+                    lockFile.ProjectLibraries.Add(projectLibrary);
                 }
             }
         }
@@ -166,8 +213,53 @@ namespace Microsoft.DotNet.ProjectModel.Graph
             library.CompileTimeAssemblies = ReadObject(jobject.ValueAsJsonObject("compile"), ReadFileItem);
             library.ResourceAssemblies = ReadObject(jobject.ValueAsJsonObject("resource"), ReadFileItem);
             library.NativeLibraries = ReadObject(jobject.ValueAsJsonObject("native"), ReadFileItem);
-
+            library.ContentFiles = ReadObject(jobject.ValueAsJsonObject("contentFiles"), ReadContentFile);
+            library.RuntimeTargets = ReadObject(jobject.ValueAsJsonObject("runtimeTargets"), ReadRuntimeTarget);
             return library;
+        }
+
+        private static LockFileRuntimeTarget ReadRuntimeTarget(string property, JsonValue json)
+        {
+            var jsonObject = json as JsonObject;
+            if (jsonObject == null)
+            {
+                throw FileFormatException.Create("The value type is not an object.", json);
+            }
+
+            return new LockFileRuntimeTarget(
+                path: property,
+                runtime: jsonObject.ValueAsString("rid"),
+                assetType: jsonObject.ValueAsString("assetType")
+                );
+        }
+
+        private static LockFileContentFile ReadContentFile(string property, JsonValue json)
+        {
+            var contentFile = new LockFileContentFile()
+            {
+                Path = property
+            };
+
+            var jsonObject = json as JsonObject;
+            if (jsonObject != null)
+            {
+
+                BuildAction action;
+                BuildAction.TryParse(jsonObject.ValueAsString("buildAction"), out action);
+
+                contentFile.BuildAction = action;
+                var codeLanguage = jsonObject.ValueAsString("codeLanguage");
+                if (codeLanguage == "any")
+                {
+                    codeLanguage = null;
+                }
+                contentFile.CodeLanguage = codeLanguage;
+                contentFile.OutputPath = jsonObject.ValueAsString("outputPath");
+                contentFile.PPOutputPath = jsonObject.ValueAsString("ppOutputPath");
+                contentFile.CopyToOutput = ReadBool(jsonObject, "copyToOutput", false);
+            }
+
+            return contentFile;
         }
 
         private static ProjectFileDependencyGroup ReadProjectFileDependencyGroup(string property, JsonValue json)

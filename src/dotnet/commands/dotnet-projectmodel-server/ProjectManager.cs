@@ -54,9 +54,9 @@ namespace Microsoft.DotNet.ProjectModel.Server
 
             _messengers = new List<Messenger<ProjectContextSnapshot>>
             {
-                new DependencyDiagnosticsMessenger(Transmit),
                 new ReferencesMessenger(Transmit),
                 new DependenciesMessenger(Transmit),
+                new DependencyDiagnosticsMessenger(Transmit),
                 new CompilerOptionsMessenger(Transmit),
                 new SourcesMessenger(Transmit)
             };
@@ -122,10 +122,8 @@ namespace Microsoft.DotNet.ProjectModel.Server
             }
             catch (Exception ex)
             {
-                // TODO: review error handing logic
-
-                _log.LogError($"Error occurred: {ex}");
-
+                _log.LogError("A unexpected exception occurred: {0}", ex.ToString());
+                
                 var error = new ErrorMessage
                 {
                     Message = ex.Message

@@ -5,29 +5,80 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Linq;
+using Microsoft.Extensions.PlatformAbstractions;
 
 namespace Microsoft.Extensions.DependencyModel
 {
+    public class TargetInfo
+    {
+        public TargetInfo(string framework,
+            string runtime,
+            string runtimeSignature,
+            bool isPortable)
+        {
+            if (string.IsNullOrEmpty(framework))
+            {
+                throw new ArgumentException(nameof(framework));
+            }
+
+            Framework = framework;
+            Runtime = runtime;
+            RuntimeSignature = runtimeSignature;
+            IsPortable = isPortable;
+        }
+
+        public string Framework { get; }
+
+        public string Runtime { get; }
+
+        public string RuntimeSignature { get; }
+
+        public bool IsPortable { get; }
+
+    }
+
     public class DependencyContext
     {
-        private const string DepsResourceSufix = ".deps.json";
-
         private static readonly Lazy<DependencyContext> _defaultContext = new Lazy<DependencyContext>(LoadDefault);
 
-        public DependencyContext(string target, string runtime, CompilationOptions compilationOptions, CompilationLibrary[] compileLibraries, RuntimeLibrary[] runtimeLibraries)
+        public DependencyContext(TargetInfo target,
+            CompilationOptions compilationOptions,
+            IEnumerable<CompilationLibrary> compileLibraries,
+            IEnumerable<RuntimeLibrary> runtimeLibraries,
+            IEnumerable<RuntimeFallbacks> runtimeGraph)
         {
+            if (target == null)
+            {
+                throw new ArgumentNullException(nameof(target));
+            }
+            if (compilationOptions == null)
+            {
+                throw new ArgumentNullException(nameof(compilationOptions));
+            }
+            if (compileLibraries == null)
+            {
+                throw new ArgumentNullException(nameof(compileLibraries));
+            }
+            if (runtimeLibraries == null)
+            {
+                throw new ArgumentNullException(nameof(runtimeLibraries));
+            }
+            if (runtimeGraph == null)
+            {
+                throw new ArgumentNullException(nameof(runtimeGraph));
+            }
+
             Target = target;
-            Runtime = runtime;
             CompilationOptions = compilationOptions;
-            CompileLibraries = compileLibraries;
-            RuntimeLibraries = runtimeLibraries;
+            CompileLibraries = compileLibraries.ToArray();
+            RuntimeLibraries = runtimeLibraries.ToArray();
+            RuntimeGraph = runtimeGraph.ToArray();
         }
 
         public static DependencyContext Default => _defaultContext.Value;
 
-        public string Target { get; }
-
-        public string Runtime { get; }
+        public TargetInfo Target { get; }
 
         public CompilationOptions CompilationOptions { get; }
 
@@ -35,30 +86,45 @@ namespace Microsoft.Extensions.DependencyModel
 
         public IReadOnlyList<RuntimeLibrary> RuntimeLibraries { get; }
 
+        public IReadOnlyList<RuntimeFallbacks> RuntimeGraph { get; }
+
+        public DependencyContext Merge(DependencyContext other)
+        {
+            if (other == null)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
+
+            return new DependencyContext(
+                Target,
+                CompilationOptions,
+                CompileLibraries.Union(other.CompileLibraries, new LibraryMergeEqualityComparer<CompilationLibrary>()),
+                RuntimeLibraries.Union(other.RuntimeLibraries, new LibraryMergeEqualityComparer<RuntimeLibrary>()),
+                RuntimeGraph.Union(other.RuntimeGraph)
+                );
+        }
+
         private static DependencyContext LoadDefault()
         {
-            var entryAssembly = Assembly.GetEntryAssembly();
-            return Load(entryAssembly);
+            return DependencyContextLoader.Default.Load(Assembly.GetEntryAssembly());
         }
 
         public static DependencyContext Load(Assembly assembly)
         {
-            var stream = assembly.GetManifestResourceStream(assembly.GetName().Name + DepsResourceSufix);
-
-            if (stream == null)
-            {
-                return null;
-            }
-
-            using (stream)
-            {
-                return Load(stream);
-            }
+            return DependencyContextLoader.Default.Load(assembly);
         }
 
-        public static DependencyContext Load(Stream stream)
+        private class LibraryMergeEqualityComparer<T> : IEqualityComparer<T> where T : Library
         {
-            return new DependencyContextReader().Read(stream);
+            public bool Equals(T x, T y)
+            {
+                return string.Equals(x.Name, y.Name, StringComparison.Ordinal);
+            }
+
+            public int GetHashCode(T obj)
+            {
+                return obj.Name.GetHashCode();
+            }
         }
     }
 }

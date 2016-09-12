@@ -1,6 +1,7 @@
 ﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -8,7 +9,7 @@ namespace Microsoft.Extensions.DependencyModel
 {
     public class CompilationOptions
     {
-        public IEnumerable<string> Defines { get; }
+        public IReadOnlyList<string> Defines { get; }
 
         public string LanguageVersion { get; }
 
@@ -26,6 +27,8 @@ namespace Microsoft.Extensions.DependencyModel
 
         public bool? PublicSign { get; }
 
+        public string DebugType { get; }
+
         public bool? EmitEntryPoint { get; }
 
         public bool? GenerateXmlDocumentation { get; }
@@ -40,6 +43,7 @@ namespace Microsoft.Extensions.DependencyModel
             keyFile: null,
             delaySign: null,
             publicSign: null,
+            debugType: null,
             emitEntryPoint: null,
             generateXmlDocumentation: null);
 
@@ -52,10 +56,15 @@ namespace Microsoft.Extensions.DependencyModel
             string keyFile,
             bool? delaySign,
             bool? publicSign,
+            string debugType,
             bool? emitEntryPoint,
             bool? generateXmlDocumentation)
         {
-            Defines = defines;
+            if (defines == null)
+            {
+                throw new ArgumentNullException(nameof(defines));
+            }
+            Defines = defines.ToArray();
             LanguageVersion = languageVersion;
             Platform = platform;
             AllowUnsafe = allowUnsafe;
@@ -64,6 +73,7 @@ namespace Microsoft.Extensions.DependencyModel
             KeyFile = keyFile;
             DelaySign = delaySign;
             PublicSign = publicSign;
+            DebugType = debugType;
             EmitEntryPoint = emitEntryPoint;
             GenerateXmlDocumentation = generateXmlDocumentation;
         }

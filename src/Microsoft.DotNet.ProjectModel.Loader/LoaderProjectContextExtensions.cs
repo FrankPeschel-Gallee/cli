@@ -10,7 +10,10 @@ namespace Microsoft.DotNet.ProjectModel.Loader
 {
     public static class LoaderProjectContextExtensions
     {
-        public static AssemblyLoadContext CreateLoadContext(this ProjectContext context, string configuration = "Debug")
+        public static AssemblyLoadContext CreateLoadContext(
+            this ProjectContext context, 
+            string configuration = "Debug", 
+            string outputPath = null)
         {
             var exporter = context.CreateExporter(configuration);
             var assemblies = new Dictionary<AssemblyName, string>(AssemblyNameComparer.OrdinalIgnoreCase);
@@ -19,7 +22,7 @@ namespace Microsoft.DotNet.ProjectModel.Loader
             foreach (var export in exporter.GetAllExports())
             {
                 // TODO: Handle resource assemblies
-                foreach (var asset in export.RuntimeAssemblies)
+                foreach (var asset in export.RuntimeAssemblyGroups.GetDefaultAssets())
                 {
                     // REVIEW: Should we use the following?
                     // AssemblyLoadContext.GetAssemblyName(asset.ResolvedPath);
@@ -27,7 +30,7 @@ namespace Microsoft.DotNet.ProjectModel.Loader
                     assemblies[assemblyName] = asset.ResolvedPath;
                 }
 
-                foreach (var asset in export.NativeLibraries)
+                foreach (var asset in export.NativeLibraryGroups.GetDefaultAssets())
                 {
                     dllImports[asset.Name] = asset.ResolvedPath;
                 }
@@ -38,7 +41,7 @@ namespace Microsoft.DotNet.ProjectModel.Loader
                 dllImports,
 
                 // Add the project's output directory path to ensure project-to-project references get located
-                new[] { context.GetOutputPaths(configuration).CompilationOutputPath });
+                new[] { context.GetOutputPaths(configuration, outputPath: outputPath).CompilationOutputPath });
         }
 
         private class AssemblyNameComparer : IEqualityComparer<AssemblyName>

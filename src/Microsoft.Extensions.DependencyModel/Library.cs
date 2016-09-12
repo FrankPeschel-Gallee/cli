@@ -1,25 +1,43 @@
 ﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
+using System.Linq;
 using System.Collections.Generic;
 
 namespace Microsoft.Extensions.DependencyModel
 {
     public class Library
     {
-        public Library(string libraryType, string packageName, string version, string hash, Dependency[] dependencies, bool serviceable)
+        public Library(string type, string name, string version, string hash, IEnumerable<Dependency> dependencies, bool serviceable)
         {
-            LibraryType = libraryType;
-            PackageName = packageName;
+            if (string.IsNullOrEmpty(type))
+            {
+                throw new ArgumentException(nameof(type));
+            }
+            if (string.IsNullOrEmpty(name))
+            {
+                throw new ArgumentException(nameof(name));
+            }
+            if (string.IsNullOrEmpty(version))
+            {
+                throw new ArgumentException(nameof(version));
+            }
+            if (dependencies == null)
+            {
+                throw new ArgumentNullException(nameof(dependencies));
+            }
+            Type = type;
+            Name = name;
             Version = version;
             Hash = hash;
-            Dependencies = dependencies;
+            Dependencies = dependencies.ToArray();
             Serviceable = serviceable;
         }
 
-        public string LibraryType { get; }
+        public string Type { get; }
 
-        public string PackageName { get; }
+        public string Name { get; }
 
         public string Version { get; }
 

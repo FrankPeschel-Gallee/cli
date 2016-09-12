@@ -1,16 +1,34 @@
 {
-    "dependencies": {
-        "Microsoft.DotNet.ProjectModel": "1.0.0-*",
-        "dotnet": "1.0.0-*",
-        "Newtonsoft.Json": "7.0.1",
-        "xunit.runner.aspnet": "2.0.0-aspnet-rc2-16068"
+  "dependencies": {
+    "Microsoft.NETCore.App": {
+      "type": "platform",
+      "version": "1.0.0-rc2-*"
     },
-    "frameworks": {
-        "dnxcore50": {
-            "imports": "portable-net45+win8"
-        }
+    "dotnet": {
+      "target": "project"
     },
-    "commands": {
-        "test": "xunit.runner.aspnet"
+    "Microsoft.Win32.Registry": {
+      "version": "4.0.0-rc2-24015",
+      "exclude": "Compile"
+    },
+    "Microsoft.DotNet.Tools.Tests.Utilities": {
+      "target": "project"
+    },
+    "Microsoft.DotNet.ProjectModel": {
+      "target": "project"
+    },
+    "xunit": "2.1.0",
+    "dotnet-test-xunit": "1.0.0-dev-140469-38",
+    "System.Net.NameResolution": "4.0.0-rc2-24015"
+  },
+  "frameworks": {
+    "netcoreapp1.0": {
+      "imports": [
+        "netstandardapp1.5",
+        "dnxcore50",
+        "portable-net45+win8"
+      ]
     }
+  },
+  "testRunner": "xunit"
 }

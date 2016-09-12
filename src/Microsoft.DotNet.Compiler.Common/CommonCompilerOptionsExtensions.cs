@@ -32,11 +32,15 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
 
         internal static readonly OptionTemplate s_publicSignTemplate = new OptionTemplate("public-sign");
 
+        internal static readonly OptionTemplate s_debugTypeTemplate = new OptionTemplate("debug-type");
+
         internal static readonly OptionTemplate s_emitEntryPointTemplate = new OptionTemplate("emit-entry-point");
 
         internal static readonly OptionTemplate s_generateXmlDocumentation = new OptionTemplate("generate-xml-documentation");
 
         internal static readonly OptionTemplate s_additionalArgumentsTemplate = new OptionTemplate("additional-argument");
+
+        internal static readonly OptionTemplate s_outputNameTemplate = new OptionTemplate("output-name");
 
         public static CommonCompilerOptions Parse(ArgumentSyntax syntax)
         {
@@ -44,6 +48,7 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             IReadOnlyList<string> suppressWarnings = null;
             string languageVersion = null;
             string platform = null;
+            string debugType = null;
             bool? allowUnsafe = null;
             bool? warningsAsErrors = null;
             bool? optimize = null;
@@ -52,6 +57,7 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             bool? publicSign = null;
             bool? emitEntryPoint = null;
             bool? generateXmlDocumentation = null;
+            string outputName = null;
             IReadOnlyList<string> additionalArguments = null;
 
             Func<string, bool?> nullableBoolConverter = v => bool.Parse(v);
@@ -61,6 +67,8 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             syntax.DefineOptionList(s_suppressWarningTemplate.LongName, ref suppressWarnings, "Suppresses the specified warning");
 
             syntax.DefineOptionList(s_additionalArgumentsTemplate.LongName, ref additionalArguments, "Pass the additional argument directly to the compiler");
+
+            syntax.DefineOption(s_debugTypeTemplate.LongName, ref debugType, "The type of PDB to emit: portable or full");
 
             syntax.DefineOption(s_languageVersionTemplate.LongName, ref languageVersion,
                     "The version of the language used to compile");
@@ -92,6 +100,8 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             syntax.DefineOption(s_generateXmlDocumentation.LongName, ref generateXmlDocumentation,
                     nullableBoolConverter, "Generate XML documentation file");
 
+            syntax.DefineOption(s_outputNameTemplate.LongName, ref outputName, "Output assembly name");
+
             return new CommonCompilerOptions
             {
                 Defines = defines,
@@ -104,8 +114,10 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
                 KeyFile = keyFile,
                 DelaySign = delaySign,
                 PublicSign = publicSign,
+                DebugType = debugType,
                 EmitEntryPoint = emitEntryPoint,
                 GenerateXmlDocumentation = generateXmlDocumentation,
+                OutputName = outputName,
                 AdditionalArguments = additionalArguments
             };
         }
@@ -115,6 +127,7 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             var defines = options.Defines;
             var suppressWarnings = options.SuppressWarnings;
             var languageVersion = options.LanguageVersion;
+            var debugType = options.DebugType;
             var platform = options.Platform;
             var allowUnsafe = options.AllowUnsafe;
             var warningsAsErrors = options.WarningsAsErrors;
@@ -124,6 +137,7 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             var publicSign = options.PublicSign;
             var emitEntryPoint = options.EmitEntryPoint;
             var generateXmlDocumentation = options.GenerateXmlDocumentation;
+            var outputName = options.OutputName;
             var additionalArguments = options.AdditionalArguments;
 
             var args = new List<string>();
@@ -183,6 +197,11 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
                 args.Add(s_publicSignTemplate.ToLongArg(publicSign));
             }
 
+            if (debugType != null)
+            {
+                args.Add(s_debugTypeTemplate.ToLongArg(debugType));
+            }
+
             if (emitEntryPoint != null)
             {
                 args.Add(s_emitEntryPointTemplate.ToLongArg(emitEntryPoint));
@@ -191,6 +210,11 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
             if (generateXmlDocumentation != null)
             {
                 args.Add(s_generateXmlDocumentation.ToLongArg(generateXmlDocumentation));
+            }
+
+            if (outputName != null)
+            {
+                args.Add(s_outputNameTemplate.ToLongArg(outputName));
             }
 
             return args;

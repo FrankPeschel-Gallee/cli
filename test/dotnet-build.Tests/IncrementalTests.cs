@@ -4,25 +4,37 @@
 using System;
 using System.IO;
 using System.Linq;
+using FluentAssertions;
 using Microsoft.DotNet.Cli.Utils;
 using Microsoft.DotNet.Tools.Test.Utilities;
 using Xunit;
+using Microsoft.DotNet.TestFramework;
 
 namespace Microsoft.DotNet.Tools.Builder.Tests
 {
     public class IncrementalTests : IncrementalTestBase
     {
 
-        public IncrementalTests() : base(
-            Path.Combine(AppContext.BaseDirectory, "TestAssets", "TestProjects", "TestSimpleIncrementalApp"),
-            "TestSimpleIncrementalApp",
-            "Hello World!" + Environment.NewLine)
+        public IncrementalTests()
         {
+            MainProject = "TestSimpleIncrementalApp";
+            ExpectedOutput = "Hello World!" + Environment.NewLine;
+        }
+
+        private TestInstance _testInstance;
+
+        private void CreateTestInstance()
+        {
+            _testInstance = TestAssetsManager.CreateTestInstance("TestSimpleIncrementalApp")
+                                             .WithLockFiles();
+            TestProjectRoot = _testInstance.TestRoot;
         }
 
         [Fact]
         public void TestNoIncrementalFlag()
         {
+            CreateTestInstance();
+
             var buildResult = BuildProject();
             buildResult.Should().HaveCompiledProject(MainProject);
 
@@ -33,46 +45,83 @@ namespace Microsoft.DotNet.Tools.Builder.Tests
         [Fact]
         public void TestRebuildMissingPdb()
         {
+            CreateTestInstance();
             TestDeleteOutputWithExtension("pdb");
         }
 
         [Fact]
         public void TestRebuildMissingDll()
         {
+            CreateTestInstance();
             TestDeleteOutputWithExtension("dll");
         }
 
         [Fact]
         public void TestRebuildMissingXml()
         {
+            CreateTestInstance();
             TestDeleteOutputWithExtension("xml");
         }
 
         [Fact]
         public void TestNoLockFile()
         {
-
+            CreateTestInstance();
             var buildResult = BuildProject();
             buildResult.Should().HaveCompiledProject(MainProject);
 
-            var lockFile = Path.Combine(TempProjectRoot.Path, "project.lock.json");
+            var lockFile = Path.Combine(TestProjectRoot, "project.lock.json");
             Assert.True(File.Exists(lockFile));
 
             File.Delete(lockFile);
             Assert.False(File.Exists(lockFile));
 
-            buildResult = BuildProject(expectBuildFailure : true);
+            buildResult = BuildProject(expectBuildFailure: true);
             Assert.Contains("does not have a lock file", buildResult.StdErr);
+        }
+
+        [Fact]
+        public void TestModifiedVersionFile()
+        {
+            CreateTestInstance();
+            BuildProject().Should().HaveCompiledProject(MainProject);
+
+            //change version file
+            var versionFile = Path.Combine(GetIntermediaryOutputPath(), ".SDKVersion");
+            File.Exists(versionFile).Should().BeTrue();
+            File.AppendAllText(versionFile, "text");
+
+            //assert rebuilt
+            BuildProject().Should().HaveCompiledProject(MainProject);
+        }
+
+        [Fact]
+        public void TestNoVersionFile()
+        {
+            CreateTestInstance();
+            BuildProject().Should().HaveCompiledProject(MainProject);
+
+            //delete version file
+            var versionFile = Path.Combine(GetIntermediaryOutputPath(), ".SDKVersion");
+            File.Exists(versionFile).Should().BeTrue();
+            File.Delete(versionFile);
+            File.Exists(versionFile).Should().BeFalse();
+
+            //assert build skipped due to no version file
+            BuildProject().Should().HaveSkippedProjectCompilation(MainProject);
+
+            //the version file should have been regenerated during the build, even if compilation got skipped
+            File.Exists(versionFile).Should().BeTrue();
         }
 
         [Fact]
         public void TestRebuildChangedLockFile()
         {
-
+            CreateTestInstance();
             var buildResult = BuildProject();
             buildResult.Should().HaveCompiledProject(MainProject);
 
-            var lockFile = Path.Combine(TempProjectRoot.Path, "project.lock.json");
+            var lockFile = Path.Combine(TestProjectRoot, "project.lock.json");
             TouchFile(lockFile);
 
             buildResult = BuildProject();
@@ -82,7 +131,7 @@ namespace Microsoft.DotNet.Tools.Builder.Tests
         [Fact]
         public void TestRebuildChangedProjectFile()
         {
-
+            CreateTestInstance();
             var buildResult = BuildProject();
             buildResult.Should().HaveCompiledProject(MainProject);
 
@@ -96,6 +145,7 @@ namespace Microsoft.DotNet.Tools.Builder.Tests
         [Fact]
         public void TestInputWithSameTimeAsOutputCausesProjectToCompile()
         {
+            CreateTestInstance();
             var buildResult = BuildProject();
             buildResult.Should().HaveCompiledProject(MainProject);
 
