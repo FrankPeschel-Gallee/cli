@@ -8,25 +8,30 @@ namespace Microsoft.DotNet.Tools.Help
 {
     public class HelpCommand
     {
-        private const string UsageText = @"Usage: dotnet [common-options] [command] [arguments]
+        private const string UsageText = @"Usage: dotnet [host-options] [command] [arguments] [common-options]
 
 Arguments:
-  [command]     The command to execute
-  [arguments]   Arguments to pass to the command
+  [command]             The command to execute
+  [arguments]           Arguments to pass to the command
+  [host-options]        Options specific to dotnet (host)
+  [common-options]      Options common to all commands
 
-Common Options (passed before the command):
-  -v|--verbose  Enable verbose output
-  --version     Display .NET CLI Version Number
-  --info        Display .NET CLI Info
+Common options:
+  -v|--verbose          Enable verbose output
+  -h|--help             Show help 
 
-Common Commands:
+Host options (passed before the command):
+  -v|--verbose          Enable verbose output
+  --version             Display .NET CLI Version Number
+  --info                Display .NET CLI Info
+
+Commands:
   new           Initialize a basic .NET project
   restore       Restore dependencies specified in the .NET project
   build         Builds a .NET project
   publish       Publishes a .NET project for deployment (including the runtime)
   run           Compiles and immediately executes a .NET project
-  test          Executes tests in a test project
-  repl          Launch an interactive session (read, eval, print, loop)
+  test          Runs unit tests using the test runner specified in the project
   pack          Creates a NuGet package";
 
         public static int Run(string[] args)

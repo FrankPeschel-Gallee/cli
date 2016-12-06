@@ -46,7 +46,7 @@ namespace Microsoft.Extensions.DependencyModel
                 .Select(export => export.Library.Identity)
                 .Distinct()
                 .Select(identity => new Dependency(identity.Name, identity.Version.ToString()))
-                .ToDictionary(dependency => dependency.Name);
+                .ToDictionary(dependency => dependency.Name, StringComparer.OrdinalIgnoreCase);
 
             var compilationOptions = compilerOptions != null
                 ? GetCompilationOptions(compilerOptions)
@@ -115,7 +115,9 @@ namespace Microsoft.Extensions.DependencyModel
         {
             var type = export.Library.Identity.Type;
 
-            var serviceable = (export.Library as PackageDescription)?.PackageLibrary.IsServiceable ?? false;
+            // TEMPORARY: All packages are serviceable in RC2
+            // See https://github.com/dotnet/cli/issues/2569
+            var serviceable = (export.Library as PackageDescription) != null;
             var libraryDependencies = new HashSet<Dependency>();
 
             foreach (var libraryDependency in export.Library.Dependencies)
@@ -144,8 +146,9 @@ namespace Microsoft.Extensions.DependencyModel
                     export.NativeLibraryGroups.Select(CreateRuntimeAssetGroup).ToArray(),
                     export.ResourceAssemblies.Select(CreateResourceAssembly),
                     libraryDependencies,
-                    serviceable
-                    );
+                    serviceable,
+                    GetLibraryPath(export.Library),
+                    GetLibraryHashPath(export.Library));
             }
             else
             {
@@ -166,8 +169,38 @@ namespace Microsoft.Extensions.DependencyModel
                     export.Library.Hash,
                     assemblies,
                     libraryDependencies,
-                    serviceable);
+                    serviceable,
+                    GetLibraryPath(export.Library),
+                    GetLibraryHashPath(export.Library));
             }
+        }
+
+        private string GetLibraryPath(LibraryDescription description)
+        {
+            var packageDescription = description as PackageDescription;
+
+            if (packageDescription != null)
+            {
+                // This is the relative path appended to a NuGet packages directory to find the directory containing
+                // the package assets. This string should only be mastered by NuGet.
+                return packageDescription.PackageLibrary?.Path;
+            }
+
+            return null;
+        }
+
+        private string GetLibraryHashPath(LibraryDescription description)
+        {
+            var packageDescription = description as PackageDescription;
+
+            if (packageDescription != null)
+            {
+                // This hash path appended to the package path (much like package assets). This string should only be
+                // mastered by NuGet.
+                return packageDescription.HashPath;
+            }
+
+            return null;
         }
 
         private RuntimeAssetGroup CreateRuntimeAssetGroup(LibraryAssetGroup libraryAssetGroup)

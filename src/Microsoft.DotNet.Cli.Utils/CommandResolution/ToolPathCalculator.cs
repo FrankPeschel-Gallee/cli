@@ -1,5 +1,5 @@
-// Copyright (c) .NET Foundation. All rights reserved.
-// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.IO;
@@ -55,7 +55,7 @@ namespace Microsoft.DotNet.Cli.Utils
 
             return Path.Combine(
                 GetBaseToolPath(packageId),
-                version.ToNormalizedString(),
+                version.ToNormalizedString().ToLowerInvariant(),
                 framework.GetShortFolderName(),
                 "project.lock.json");
         }
@@ -65,7 +65,7 @@ namespace Microsoft.DotNet.Cli.Utils
             return Path.Combine(
                 _packagesDirectory,
                 ".tools",
-                packageId);
+                packageId.ToLowerInvariant());
         }
 
         private IEnumerable<NuGetVersion> GetAvailableToolVersions(string packageId)

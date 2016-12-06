@@ -1,16 +1,18 @@
 {
-  "version": "1.0.0-*",
-  "compilationOptions": {
+  "version": "1.0.0-preview3-*",
+  "buildOptions": {
     "keyFile": "../../tools/Key.snk",
     "warningsAsErrors": true
   },
   "dependencies": {
-    "Microsoft.DotNet.ProjectModel": "1.0.0-*",
-    "Microsoft.Extensions.PlatformAbstractions": "1.0.0-rc2-20459",
-    "NuGet.Versioning": "3.5.0-beta-1178",
-    "NuGet.Packaging": "3.5.0-beta-1178",
-    "NuGet.Frameworks": "3.5.0-beta-1178",
-    "NuGet.ProjectModel": "3.5.0-beta-1178"
+    "Microsoft.DotNet.ProjectModel": {
+      "target": "project"
+    },
+    "Microsoft.DotNet.PlatformAbstractions": "1.0.1-beta-000933",
+    "NuGet.Versioning": "3.6.0-beta.1.msbuild.4",
+    "NuGet.Packaging": "3.6.0-beta.1.msbuild.4",
+    "NuGet.Frameworks": "3.6.0-beta.1.msbuild.4",
+    "NuGet.ProjectModel": "3.6.0-beta.1.msbuild.4"
   },
   "frameworks": {
     "net451": {
@@ -20,12 +22,12 @@
         }
       }
     },
-    "netstandard1.5": {
+    "netstandard1.6": {
       "imports": [
         "portable-net45+wp80+win8+wpa81+dnxcore50"
       ],
       "dependencies": {
-        "System.Diagnostics.Process": "4.1.0-rc2-24015"
+        "System.Diagnostics.Process": "4.1.0"
       }
     }
   }

@@ -14,7 +14,7 @@ using System.Xml;
 using System.Xml.Linq;
 // TODO: Resources using NuGet.Resources;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     internal static class ManifestReader
     {
@@ -129,6 +129,9 @@ namespace NuGet
                     break;
                 case "tags":
                     manifestMetadata.Tags = value;
+                    break;
+                case "serviceable":
+                    manifestMetadata.Serviceable = XmlConvert.ToBoolean(value);
                     break;
                 case "dependencies":
                     manifestMetadata.DependencySets = ReadDependencySets(element);

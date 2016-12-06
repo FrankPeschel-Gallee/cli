@@ -2,28 +2,20 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Linq;
-using Xunit;
-using Moq;
-using Microsoft.DotNet.Cli.Utils;
+using FluentAssertions;
+using Microsoft.DotNet.InternalAbstractions;
 using Microsoft.DotNet.ProjectModel;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
-using System.Threading;
-using FluentAssertions;
 using NuGet.Frameworks;
+using Xunit;
 
 namespace Microsoft.DotNet.Cli.Utils.Tests
 {
-    public class GivenAProjectDependenciesCommandResolver
+    public class GivenAProjectDependenciesCommandResolver : TestBase
     {
 
-        private static readonly string s_liveProjectDirectory = 
-            Path.Combine(AppContext.BaseDirectory, "TestAssets/TestProjects/AppWithDirectDependency");
+        private const string TestProjectName = "AppWithDirectDep";
 
         [Fact]
         public void It_returns_null_when_CommandName_is_null()
@@ -33,10 +25,10 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = null,
-                CommandArguments = new string[] {""},
+                CommandArguments = new string[] { "" },
                 ProjectDirectory = "/some/directory",
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -52,10 +44,10 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "command",
-                CommandArguments = new string[] {""},
+                CommandArguments = new string[] { "" },
                 ProjectDirectory = null,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -68,11 +60,14 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
 
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithLockFiles();
+
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "command",
-                CommandArguments = new string[] {""},
-                ProjectDirectory = s_liveProjectDirectory,
+                CommandArguments = new string[] { "" },
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
                 Framework = null
             };
@@ -87,13 +82,16 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
 
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithLockFiles();
+
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "command",
-                CommandArguments = new string[] {""},
-                ProjectDirectory = s_liveProjectDirectory,
+                CommandArguments = new string[] { "" },
+                ProjectDirectory = testInstance.Path,
                 Configuration = null,
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -106,13 +104,16 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
 
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithLockFiles();
+
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "nonexistent-command",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -121,17 +122,21 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         }
 
         [Fact]
-        public void It_returns_a_CommandSpec_with_CoreHost_as_FileName_and_CommandName_in_Args_when_CommandName_exists_in_ProjectDependencies()
+        public void It_returns_a_CommandSpec_with_Dotnet_as_FileName_and_CommandName_in_Args_when_CommandName_exists_in_ProjectDependencies()
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
+
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithBuildArtifacts()
+                .WithLockFiles();
 
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "dotnet-hello",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -140,7 +145,7 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
 
             var commandFile = Path.GetFileNameWithoutExtension(result.Path);
 
-            commandFile.Should().Be("corehost");
+            commandFile.Should().Be("dotnet");
 
             result.Args.Should().Contain(commandResolverArguments.CommandName);
         }
@@ -150,13 +155,17 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
 
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithBuildArtifacts()
+                .WithLockFiles();
+
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "dotnet-hello",
-                CommandArguments = new [] { "arg with space"},
-                ProjectDirectory = s_liveProjectDirectory,
+                CommandArguments = new[] { "arg with space" },
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -166,17 +175,21 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         }
 
         [Fact]
-        public void It_passes_depsfile_arg_to_corehost_when_returning_a_commandspec()
+        public void It_passes_depsfile_arg_to_host_when_returning_a_CommandSpec()
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
+
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithBuildArtifacts()
+                .WithLockFiles();
 
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "dotnet-hello",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
@@ -186,27 +199,38 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         }
 
         [Fact]
-        public void It_sets_depsfile_based_on_output_path_when_returning_a_commandspec()
+        public void It_sets_depsfile_in_output_path_in_commandspec()
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
+
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithLockFiles();
+
+            var outputDir = Path.Combine(testInstance.Path, "outdir");
 
             var commandResolverArguments = new CommandResolverArguments
             {
                 CommandName = "dotnet-hello",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15,
-                OutputPath = AppContext.BaseDirectory
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10,
+                OutputPath = outputDir
             };
 
+            var buildCommand = new BuildCommand(
+                Path.Combine(testInstance.Path, "project.json"),
+                output: outputDir,
+                framework: FrameworkConstants.CommonFrameworks.NetCoreApp10.ToString())
+                .Execute().Should().Pass();
+
             var projectContext = ProjectContext.Create(
-                s_liveProjectDirectory,
-                FrameworkConstants.CommonFrameworks.NetStandardApp15,
-                PlatformServices.Default.Runtime.GetAllCandidateRuntimeIdentifiers());
+                testInstance.Path,
+                FrameworkConstants.CommonFrameworks.NetCoreApp10,
+                RuntimeEnvironmentRidExtensions.GetAllCandidateRuntimeIdentifiers());
 
             var depsFilePath =
-                projectContext.GetOutputPaths("Debug", outputPath: AppContext.BaseDirectory).RuntimeFiles.DepsJson;
+                projectContext.GetOutputPaths("Debug", outputPath: outputDir).RuntimeFiles.DepsJson;
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
 
@@ -215,27 +239,38 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         }
 
         [Fact]
-        public void It_sets_depsfile_based_on_build_base_path_when_returning_a_commandspec()
+        public void It_sets_depsfile_in_build_base_path_in_commandspec()
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
+
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithLockFiles();
+
+            var buildBasePath = Path.Combine(testInstance.Path, "basedir");
 
             var commandResolverArguments = new CommandResolverArguments
             {
                 CommandName = "dotnet-hello",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15,
-                BuildBasePath = AppContext.BaseDirectory
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10,
+                BuildBasePath = buildBasePath
             };
 
+            var buildCommand = new BuildCommand(
+                Path.Combine(testInstance.Path, "project.json"),
+                buildBasePath: buildBasePath,
+                framework: FrameworkConstants.CommonFrameworks.NetCoreApp10.ToString())
+                .Execute().Should().Pass();
+
             var projectContext = ProjectContext.Create(
-                s_liveProjectDirectory,
-                FrameworkConstants.CommonFrameworks.NetStandardApp15,
-                PlatformServices.Default.Runtime.GetAllCandidateRuntimeIdentifiers());
+                testInstance.Path,
+                FrameworkConstants.CommonFrameworks.NetCoreApp10,
+                RuntimeEnvironmentRidExtensions.GetAllCandidateRuntimeIdentifiers());
 
             var depsFilePath =
-                projectContext.GetOutputPaths("Debug", AppContext.BaseDirectory).RuntimeFiles.DepsJson;
+                projectContext.GetOutputPaths("Debug", buildBasePath).RuntimeFiles.DepsJson;
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
 
@@ -248,19 +283,23 @@ namespace Microsoft.DotNet.Cli.Utils.Tests
         {
             var projectDependenciesCommandResolver = SetupProjectDependenciesCommandResolver();
 
+            var testInstance = TestAssetsManager.CreateTestInstance(TestProjectName)
+                .WithBuildArtifacts()
+                .WithLockFiles();
+
             var commandResolverArguments = new CommandResolverArguments()
             {
                 CommandName = "dotnet-hello",
                 CommandArguments = null,
-                ProjectDirectory = s_liveProjectDirectory,
+                ProjectDirectory = testInstance.Path,
                 Configuration = "Debug",
-                Framework = FrameworkConstants.CommonFrameworks.NetStandardApp15
+                Framework = FrameworkConstants.CommonFrameworks.NetCoreApp10
             };
 
             var result = projectDependenciesCommandResolver.Resolve(commandResolverArguments);
 
             result.Should().NotBeNull();
-            
+
             result.Args.Should().Contain("dotnet-hello");
         }
 

@@ -2,13 +2,13 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
+using Microsoft.DotNet.InternalAbstractions;
 using Microsoft.DotNet.ProjectModel;
 using Microsoft.DotNet.TestFramework;
-using Microsoft.Extensions.PlatformAbstractions;
-using Xunit;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using System.Linq;
+using Xunit;
 
 namespace Microsoft.Dotnet.Tools.Test.Tests
 {
@@ -19,15 +19,14 @@ namespace Microsoft.Dotnet.Tools.Test.Tests
 
         public GivenThatWeWantToRunTestsInTheConsole()
         {
-            var testAssetManager = new TestAssetsManager(Path.Combine(RepoRoot, "TestAssets"));
             var testInstance =
-                testAssetManager.CreateTestInstance("ProjectWithTests", identifier: "ConsoleTests");
+                TestAssetsManager.CreateTestInstance(Path.Combine("ProjectsWithTests", "NetCoreAppOnlyProject"), identifier: "ConsoleTests");
 
             _projectFilePath = Path.Combine(testInstance.TestRoot, "project.json");
             var contexts = ProjectContext.CreateContextForEachFramework(
                 _projectFilePath,
                 null,
-                PlatformServices.Default.Runtime.GetAllCandidateRuntimeIdentifiers());
+                RuntimeEnvironmentRidExtensions.GetAllCandidateRuntimeIdentifiers());
 
             // Restore the project again in the destination to resolve projects
             // Since the lock file has project relative paths in it, those will be broken
@@ -43,7 +42,7 @@ namespace Microsoft.Dotnet.Tools.Test.Tests
         public void It_returns_a_failure_when_it_fails_to_run_the_tests()
         {
             var testCommand = new DotnetTestCommand();
-            var result = testCommand.Execute(
+            var result = testCommand.ExecuteWithCapturedOutput(
                 $"{_projectFilePath} -o {Path.Combine(AppContext.BaseDirectory, "nonExistingFolder")} --no-build");
             result.Should().Fail();
         }
@@ -54,6 +53,18 @@ namespace Microsoft.Dotnet.Tools.Test.Tests
             var testCommand = new DotnetTestCommand();
             var result = testCommand.Execute($"{_projectFilePath}");
             result.Should().Pass();
+        }
+
+        [Fact]
+        public void It_runs_tests_for_a_local_project_json()
+        {
+            string projectDirectory = Path.GetDirectoryName(_projectFilePath);
+
+            new DotnetTestCommand()
+                .WithWorkingDirectory(projectDirectory)
+                .Execute("project.json")
+                .Should()
+                .Pass();
         }
 
         [Fact]
@@ -84,6 +95,58 @@ namespace Microsoft.Dotnet.Tools.Test.Tests
             var testCommand = new DotnetTestCommand();
             result = testCommand.Execute($"{_projectFilePath} -o {_defaultOutputPath} --no-build");
             result.Should().Pass();
+        }
+        
+        [Fact]
+        public void It_runs_tests_for_an_assembly_passed_as_param()
+        {
+            var publishCommand = new PublishCommand(_projectFilePath);
+            var result = publishCommand.Execute();
+            result.Should().Pass();
+
+            var assemblyUnderTestPath = Path.Combine(publishCommand.GetOutputDirectory(true).FullName, publishCommand.GetPortableOutputName());
+
+            var testCommand = new DotnetTestCommand();
+            result = testCommand.Execute($"{assemblyUnderTestPath}");
+            result.Should().Pass();
+        }
+
+        [Theory]
+        [MemberData("ArgumentNames")]
+        public void It_fails_correctly_with_unspecified_arguments_with_long_form(string argument)
+        {
+            new DotnetTestCommand()
+                .ExecuteWithCapturedOutput($"{_projectFilePath} --{argument}")
+                .Should()
+                .Fail()
+                .And
+                .HaveStdErrContaining($"Missing value for option '{argument}'");
+        }
+        
+        [Theory]
+        [MemberData("ArgumentNames")]
+        public void It_fails_correctly_with_unspecified_arguments_with_short_form(string argument)
+        {
+            new DotnetTestCommand()
+                .ExecuteWithCapturedOutput($"{_projectFilePath} -{argument[0]}")
+                .Should()
+                .Fail()
+                .And
+                .HaveStdErrContaining($"Missing value for option '{argument}'");
+        }
+        
+        public static IEnumerable<object[]> ArgumentNames
+        {
+            get
+            {
+                return new[]
+                {
+                    new object[] { "output" },
+                    new object[] { "configuration" },
+                    new object[] { "runtime" },
+                    new object[] { "build-base-path" }
+                };
+            }
         }
 
         private string GetNotSoLongBuildBasePath()

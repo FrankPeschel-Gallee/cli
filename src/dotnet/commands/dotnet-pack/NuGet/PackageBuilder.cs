@@ -13,7 +13,7 @@ using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     public class PackageBuilder
     {
@@ -82,6 +82,12 @@ namespace NuGet
         }
 
         public bool RequireLicenseAcceptance
+        {
+            get;
+            set;
+        }
+
+        public bool Serviceable
         {
             get;
             set;
@@ -284,6 +290,7 @@ namespace NuGet
             ProjectUrl = manifestMetadata.ProjectUrl;
             RequireLicenseAcceptance = manifestMetadata.RequireLicenseAcceptance;
             DevelopmentDependency = manifestMetadata.DevelopmentDependency;
+            Serviceable = manifestMetadata.Serviceable;
             Description = manifestMetadata.Description;
             Summary = manifestMetadata.Summary;
             ReleaseNotes = manifestMetadata.ReleaseNotes;

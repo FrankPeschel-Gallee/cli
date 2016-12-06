@@ -3,30 +3,38 @@
   "dependencies": {
     "Microsoft.NETCore.App": {
       "type": "platform",
-      "version": "1.0.0-rc2-*"
+      "version": "1.0.1"
     },
-    "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24015",
+    "System.Runtime.Serialization.Primitives": "4.1.1",
     "Microsoft.DotNet.Tools.Tests.Utilities": {
       "target": "project"
     },
     "Microsoft.DotNet.Cli.Utils": {
       "target": "project"
     },
-    "xunit": "2.1.0",
+    "xunit": "2.2.0-beta3-build3330",
     "xunit.netcore.extensions": "1.0.0-prerelease-00206",
-    "dotnet-test-xunit": "1.0.0-dev-140469-38"
+    "dotnet-test-xunit": "1.0.0-rc2-350904-49"
   },
   "frameworks": {
     "netcoreapp1.0": {
       "imports": [
-        "netstandardapp1.5",
-        "dnxcore50",
-        "portable-net45+win8"
+        "dotnet5.4",
+        "portable-net451+win8"
       ]
     }
   },
-  "content": [
-    "../../TestAssets/TestProjects/TestProjectWithResource/**/*"
-  ],
-  "testRunner": "xunit"
+  "testRunner": "xunit",
+  "publishOptions": {
+    "include": [
+      "../../TestAssets/TestProjects/TestProjectWithResource/**/*"
+    ]
+  },
+  "buildOptions": {
+    "copyToOutput": {
+      "include": [
+        "../../TestAssets/TestProjects/TestProjectWithResource/**/*"
+      ]
+    }
+  }
 }

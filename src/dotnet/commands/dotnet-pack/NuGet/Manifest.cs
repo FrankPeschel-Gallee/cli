@@ -8,7 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     public class Manifest
     {
@@ -109,6 +109,7 @@ namespace NuGet
             metadata.Authors = copy.Authors.Distinct();
             metadata.Owners = copy.Owners.Distinct();
             metadata.Tags = string.Join(",", copy.Tags).Trim();
+            metadata.Serviceable = copy.Serviceable;
             metadata.LicenseUrl = copy.LicenseUrl;
             metadata.ProjectUrl = copy.ProjectUrl;
             metadata.IconUrl = copy.IconUrl;

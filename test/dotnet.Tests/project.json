@@ -3,9 +3,9 @@
   "dependencies": {
     "Microsoft.NETCore.App": {
       "type": "platform",
-      "version": "1.0.0-rc2-*"
+      "version": "1.0.1"
     },
-    "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24015",
+    "System.Runtime.Serialization.Primitives": "4.1.1",
     "Microsoft.DotNet.Tools.Tests.Utilities": {
       "target": "project"
     },
@@ -16,24 +16,44 @@
       "target": "project",
       "type": "build"
     },
-    "xunit": "2.1.0",
-    "dotnet-test-xunit": "1.0.0-dev-140469-38"
+    "xunit": "2.2.0-beta3-build3330",
+    "dotnet-test-xunit": "1.0.0-rc2-350904-49",
+    "Microsoft.DotNet.PlatformAbstractions": "1.0.1-beta-000933"
   },
   "frameworks": {
     "netcoreapp1.0": {
       "imports": [
         "netstandardapp1.5",
-        "dnxcore50",
-        "portable-net45+win8"
+        "dotnet5.4",
+        "portable-net451+win8"
       ]
     }
   },
-  "content": [
-    "../../TestAssets/TestProjects/AppWithDirectAndToolDependency/**/*",
-    "../../TestAssets/TestProjects/AppWithDirectDependency/**/*",
-    "../../TestAssets/TestProjects/AppWithToolDependency/**/*",
-    "../../TestAssets/TestProjects/DependencyContextFromTool/**/*",
-    "../../TestAssets/DesktopTestProjects/AppWithDirectDependencyDesktopAndPortable/**/*"
-  ],
-  "testRunner": "xunit"
+  "testRunner": "xunit",
+  "publishOptions": {
+    "include": [
+      "../../TestAssets/TestProjects/AppWithDependencyOnToolWithOutputName/**/*",
+      "../../TestAssets/TestProjects/AppWithDirectAndToolDependency/**/*",
+      "../../TestAssets/TestProjects/AppWithDirectDependency/**/*",
+      "../../TestAssets/TestProjects/AppWithDirectDependencyWithOutputName/**/*",
+      "../../TestAssets/TestProjects/AppWithToolDependency/**/*",
+      "../../TestAssets/TestProjects/DependencyContextFromTool/**/*",
+      "../../TestAssets/DesktopTestProjects/AppWithDirectDependencyDesktopAndPortable/**/*",
+      "../../TestAssets/DesktopTestProjects/LibraryWithDirectDependencyDesktopAndPortable/**/*"
+    ]
+  },
+  "buildOptions": {
+    "copyToOutput": {
+      "include": [
+        "../../TestAssets/TestProjects/AppWithDependencyOnToolWithOutputName/**/*",
+        "../../TestAssets/TestProjects/AppWithDirectAndToolDependency/**/*",
+        "../../TestAssets/TestProjects/AppWithDirectDependency/**/*",
+        "../../TestAssets/TestProjects/AppWithDirectDependencyWithOutputName/**/*",
+        "../../TestAssets/TestProjects/AppWithToolDependency/**/*",
+        "../../TestAssets/TestProjects/DependencyContextFromTool/**/*",
+        "../../TestAssets/DesktopTestProjects/AppWithDirectDependencyDesktopAndPortable/**/*",
+        "../../TestAssets/DesktopTestProjects/LibraryWithDirectDependencyDesktopAndPortable/**/*"
+      ]
+    }
+  }
 }

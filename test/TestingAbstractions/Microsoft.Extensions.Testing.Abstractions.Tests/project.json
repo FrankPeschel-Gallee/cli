@@ -3,12 +3,12 @@
   "dependencies": {
     "Microsoft.NETCore.App": {
       "type": "platform",
-      "version": "1.0.0-rc2-*"
+      "version": "1.0.1"
     },
     "Microsoft.Extensions.Testing.Abstractions": {
       "target": "project"
     },
-    "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24015",
+    "System.Runtime.Serialization.Primitives": "4.1.1",
     "Microsoft.DotNet.Tools.Tests.Utilities": {
       "target": "project"
     },
@@ -18,17 +18,15 @@
     "TestAppWithPortablePdbs": {
       "target": "project"
     },
-    "xunit": "2.1.0",
-    "dotnet-test-xunit": "1.0.0-dev-140469-38",
+    "xunit": "2.2.0-beta3-build3330",
+    "dotnet-test-xunit": "1.0.0-rc2-350904-49",
     "FluentAssertions": "4.2.2"
   },
   "frameworks": {
     "netcoreapp1.0": {
       "imports": [
-        "netstandardapp1.5",
-        "dnxcore50",
-        "netstandard1.3",
-        "portable-net45+win8"
+        "dotnet5.4",
+        "portable-net451+win8"
       ]
     }
   },

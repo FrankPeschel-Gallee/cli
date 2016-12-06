@@ -6,7 +6,7 @@ using System.Collections;
 using System.Linq;
 using System.Reflection;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     internal static class ManifestVersionUtility
     {
@@ -23,7 +23,8 @@ namespace NuGet
 
         private static int GetMaxVersionFromMetadata(ManifestMetadata metadata)
         {
-            // Important: check for version 5 before version 4
+            // Important: always add newer version checks at the top
+            
             bool referencesHasTargetFramework =
               metadata.PackageAssemblyReferences != null &&
               metadata.PackageAssemblyReferences.Any(r => r.TargetFramework != null);

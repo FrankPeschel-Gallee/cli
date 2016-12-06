@@ -1,27 +1,54 @@
 ﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
-using Microsoft.DotNet.Cli.Utils;
+using Microsoft.DotNet.InternalAbstractions;
 using Microsoft.DotNet.TestFramework;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
 using Xunit;
-using System;
 
 namespace Microsoft.DotNet.Tools.Publish.Tests
 {
     public class PublishTests : TestBase
     {
-        private readonly string _testProjectsRoot;
         private readonly Func<string, string, string> _getProjectJson = ProjectUtils.GetProjectJson;
 
-        public PublishTests()
+        private static readonly dynamic[] CrossPublishTestData = new[]
         {
-            _testProjectsRoot = Path.Combine(RepoRoot, "TestAssets", "TestProjects");
-        }
+            new 
+            { 
+                Rid="centos.7-x64",
+                HostExtension="", 
+                ExpectedArtifacts=new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" } 
+            }, 
+            new 
+            { 
+                Rid="rhel.7.2-x64",
+                HostExtension="", 
+                ExpectedArtifacts=new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" } 
+            }, 
+            new 
+            { 
+                Rid="ubuntu.14.04-x64",
+                HostExtension="", 
+                ExpectedArtifacts=new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" } 
+            },
+            new 
+            { 
+                Rid="win7-x64",
+                HostExtension=".exe", 
+                ExpectedArtifacts=new string[] { "hostfxr.dll", "coreclr.dll", "hostpolicy.dll" } 
+            }, 
+            new 
+            { 
+                Rid="osx.10.11-x64",
+                HostExtension="",
+                ExpectedArtifacts=new string[] { "libhostfxr.dylib", "libcoreclr.dylib", "libhostpolicy.dylib" }
+            },
+        };
 
         public static IEnumerable<object[]> PublishOptions
         {
@@ -30,12 +57,12 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
                 return new[]
                 {
                     new object[] { "1", "", "", "", "" },
-                    new object[] { "2", "netstandardapp1.5", "", "", "" },
-                    new object[] { "3", "", PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier(), "", "" },
+                    new object[] { "2", "netcoreapp1.0", "", "", "" },
+                    new object[] { "3", "", RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier(), "", "" },
                     new object[] { "4", "", "", "Release", "" },
                     new object[] { "5", "", "", "", "some/dir"},
                     new object[] { "6", "", "", "", "some/dir/with spaces" },
-                    new object[] { "7", "netstandardapp1.5", PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier(), "Debug", "some/dir" },
+                    new object[] { "7", "netcoreapp1.0", RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier(), "Debug", "some/dir" },
                 };
             }
         }
@@ -83,52 +110,67 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
         }
 
         [Fact]
+        public void ProjectWithPublishOptionsTest()
+        {
+            var instance = TestAssetsManager.CreateTestInstance("EndToEndTestApp")
+                                            .WithLockFiles()
+                                            .WithBuildArtifacts();
+
+            var testProject = _getProjectJson(instance.TestRoot, "EndToEndTestApp");
+
+            var publishCommand = new PublishCommand(testProject);
+
+            publishCommand.Execute().Should().Pass();
+            publishCommand.GetOutputDirectory().Should().HaveFile("testpublishfile.txt");
+            publishCommand.GetOutputDirectory().Should().HaveFile("publishfiles/anotherpublishfile.txt");
+        }
+
+        [Fact]
         public void FailWhenNoRestoreTest()
         {
             TestInstance instance = TestAssetsManager.CreateTestInstance("TestAppWithLibrary");
 
             string testProject = _getProjectJson(instance.TestRoot, "TestApp");
             var publishCommand = new PublishCommand(testProject);
-            publishCommand.Execute().Should().Fail();
+            publishCommand.ExecuteWithCapturedOutput().Should().Fail();
         }
 
-        [Theory]
-        [InlineData("centos.7-x64", "", new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" })]
-        [InlineData("rhel.7.2-x64", "", new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" })]
-        [InlineData("ubuntu.14.04-x64", "", new string[] { "libhostfxr.so", "libcoreclr.so", "libhostpolicy.so" })]
-        [InlineData("win7-x64", ".exe", new string[] { "hostfxr.dll", "coreclr.dll", "hostpolicy.dll" })]
-        [InlineData("osx.10.11-x64", "", new string[] { "libhostfxr.dylib", "libcoreclr.dylib", "libhostpolicy.dylib" })]
-        public void CrossPublishingSucceedsAndHasExpectedArtifacts(string rid, string hostExtension, string[] expectedArtifacts)
-        {
-            var testNugetCache = "packages_cross_publish_test";
-            TestInstance instance = GetTestGroupTestAssetsManager("CrossPublishTestProjects")
-                .CreateTestInstance("StandaloneAppCrossPublish");
-                
-            var testProject = Path.Combine(instance.TestRoot, "project.json");
+        [Fact]
+        public void CrossPublishingSucceedsAndHasExpectedArtifacts()
+        {            
+            TestInstance instance = TestAssetsManager.CreateTestInstance(Path.Combine("PortableTests"));
+
+            var testProject = Path.Combine(instance.TestRoot, "StandaloneApp", "project.json");
+            var workingDirectory = Path.GetDirectoryName(testProject);
+            var testNugetCache = Path.Combine(workingDirectory, "packages_cross_publish_test");
 
             var restoreCommand = new RestoreCommand();
 
-            restoreCommand.WorkingDirectory = Path.GetDirectoryName(testProject);
+            restoreCommand.WorkingDirectory = workingDirectory;            
+
             restoreCommand.Environment["NUGET_PACKAGES"] = testNugetCache;
             restoreCommand.Execute().Should().Pass();
 
-            var buildCommand = new BuildCommand(testProject, runtime: rid);
-
-            buildCommand.WorkingDirectory = Path.GetDirectoryName(testProject);
-            buildCommand.Environment["NUGET_PACKAGES"] = testNugetCache;
-            buildCommand.Execute().Should().Pass();
-
-            var publishCommand = new PublishCommand(testProject, runtime: rid, noBuild: true);
-            publishCommand.Environment["NUGET_PACKAGES"] = testNugetCache;
-            publishCommand.WorkingDirectory = Path.GetDirectoryName(testProject);
-            publishCommand.Execute().Should().Pass();
-
-            var publishedDir = publishCommand.GetOutputDirectory();
-            publishedDir.Should().HaveFile("StandaloneAppCrossPublish"+ hostExtension);
-
-            foreach (var artifact in expectedArtifacts)
+            foreach (var testData in CrossPublishTestData)
             {
-                publishedDir.Should().HaveFile(artifact);
+                var buildCommand = new BuildCommand(testProject, runtime: testData.Rid);
+
+                buildCommand.WorkingDirectory = Path.GetDirectoryName(testProject);
+                buildCommand.Environment["NUGET_PACKAGES"] = testNugetCache;
+                buildCommand.Execute().Should().Pass();
+
+                var publishCommand = new PublishCommand(testProject, runtime: testData.Rid, noBuild: true);
+                publishCommand.Environment["NUGET_PACKAGES"] = testNugetCache;
+                publishCommand.WorkingDirectory = Path.GetDirectoryName(testProject);
+                publishCommand.Execute().Should().Pass();
+
+                var publishedDir = publishCommand.GetOutputDirectory();
+                publishedDir.Should().HaveFile("StandaloneApp"+ testData.HostExtension);
+
+                foreach (var artifact in testData.ExpectedArtifacts)
+                {
+                    publishedDir.Should().HaveFile(artifact);
+                }
             }
         }
 
@@ -148,24 +190,17 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
         }
 
         [Fact]
-        public void LibraryPublishTest()
+        public void PublishedLibraryWithoutRIDShouldFail()
         {
             TestInstance instance = TestAssetsManager.CreateTestInstance(Path.Combine("TestAppWithLibrary"))
-                                                     .WithLockFiles()
-                                                     .WithBuildArtifacts();
+                                                     .WithLockFiles();
 
             var testProject = _getProjectJson(instance.TestRoot, "TestLibrary");
             var publishCommand = new PublishCommand(testProject);
-            publishCommand.Execute().Should().Pass();
-
-            publishCommand.GetOutputDirectory().Should().NotHaveFile("TestLibrary.exe");
-            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibrary.dll");
-            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibrary.pdb");
-            // dependencies should also be copied
-            publishCommand.GetOutputDirectory().Should().HaveFile("System.Runtime.dll");
+            publishCommand.ExecuteWithCapturedOutput().Should().Fail();
         }
 
-        [WindowsOnlyFact]
+        [WindowsOnlyFact()]
         public void TestLibraryBindingRedirectGeneration()
         {
             TestInstance instance = TestAssetsManager.CreateTestInstance("TestBindingRedirectGeneration")
@@ -177,16 +212,16 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
             var publishCommand = new PublishCommand(lesserTestProject, "net451");
             publishCommand.Execute().Should().Pass();
 
-            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.dll");
+            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.exe");
             publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.pdb");
-            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.dll.config");
+            publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.exe.config");
             publishCommand.GetOutputDirectory().Should().NotHaveFile("TestLibraryLesser.deps.json");
 
             // dependencies should also be copied
             publishCommand.GetOutputDirectory().Should().HaveFile("Newtonsoft.Json.dll");
             publishCommand.GetOutputDirectory().Delete(true);
 
-            publishCommand = new PublishCommand(lesserTestProject, "netstandardapp1.5", PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier());
+            publishCommand = new PublishCommand(lesserTestProject, "netcoreapp1.0", RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier());
             publishCommand.Execute().Should().Pass();
 
             publishCommand.GetOutputDirectory().Should().HaveFile("TestLibraryLesser.dll");
@@ -228,7 +263,7 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
             var testProject = _getProjectJson(instance.TestRoot, "CompileFail");
             var publishCommand = new PublishCommand(testProject);
 
-            publishCommand.Execute().Should().Fail();
+            publishCommand.ExecuteWithCapturedOutput().Should().Fail();
         }
 
         [Fact]
@@ -240,7 +275,7 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
             var testProject = _getProjectJson(instance.TestRoot, "TestApp");
             var publishCommand = new PublishCommand(testProject, noBuild: true);
 
-            publishCommand.Execute().Should().Fail();
+            publishCommand.ExecuteWithCapturedOutput().Should().Fail();
         }
 
         [Fact]
@@ -293,6 +328,56 @@ namespace Microsoft.DotNet.Tools.Publish.Tests
 
             var command = new TestCommand(Path.Combine(publishedDir.FullName, outputExe));
             command.Execute("").Should().ExitWith(0);
+        }
+
+        [Fact]
+        public void PublishFailsWhenProjectRootIsEmpty()
+        {
+            using (var dir = new DisposableDirectory(Temp))
+            {
+                var command = new TestCommand("dotnet");
+                command.ExecuteWithCapturedOutput($"publish {dir.Path}").Should().Fail();
+            }
+        }
+
+        [Fact]
+        public void PublishFailsWhenProjectJsonDoesNotExist()
+        {
+            using (var dir = new DisposableDirectory(Temp))
+            {
+                var command = new TestCommand("dotnet");
+                string temp = Path.Combine(dir.Path, "project.json");
+                command.ExecuteWithCapturedOutput($"publish {temp}").Should().Fail();
+            }
+        }
+
+        [Fact]
+        public void PublishWorksWithLocalProjectJson()
+        {
+            TestInstance instance = TestAssetsManager.CreateTestInstance("TestAppSimple")
+                .WithLockFiles();
+
+            new PublishCommand("project.json")
+                .WithWorkingDirectory(instance.TestRoot)
+                .Execute()
+                .Should()
+                .Pass();
+        }
+
+        [Fact]
+        public void PublishFailsCorrectlyWithUnrestoredProject()
+        {
+            // NOTE: we don't say "WithLockFiles", so the project is "unrestored"
+            TestInstance instance = TestAssetsManager.CreateTestInstance("TestAppSimple");
+
+            new PublishCommand(instance.TestRoot)
+                .ExecuteWithCapturedOutput()
+                .Should()
+                .Fail()
+                .And
+                .HaveStdErrContaining("NU1009")
+                .And
+                .HaveStdErrContaining("dotnet restore");
         }
     }
 }

@@ -4,9 +4,11 @@
 param(
     [Parameter(Mandatory=$true)][string]$CLISDKMSIFile,
     [Parameter(Mandatory=$true)][string]$SharedFxMSIFile,
+    [Parameter(Mandatory=$true)][string]$HostFxrMSIFile,
     [Parameter(Mandatory=$true)][string]$SharedHostMSIFile,
     [Parameter(Mandatory=$true)][string]$DotnetBundleOutput,
     [Parameter(Mandatory=$true)][string]$WixRoot,
+    [Parameter(Mandatory=$true)][string]$ProductMoniker,
     [Parameter(Mandatory=$true)][string]$DotnetMSIVersion,
     [Parameter(Mandatory=$true)][string]$DotnetCLIDisplayVersion,
     [Parameter(Mandatory=$true)][string]$DotnetCLINugetVersion,
@@ -28,12 +30,14 @@ function RunCandleForBundle
     .\candle.exe -nologo `
         -dDotnetSrc="$inputDir" `
         -dMicrosoftEula="$RepoRoot\packaging\osx\clisdk\resources\en.lproj\eula.rtf" `
+        -dProductMoniker="$ProductMoniker" `
         -dBuildVersion="$DotnetMSIVersion" `
         -dDisplayVersion="$DotnetCLIDisplayVersion" `
         -dNugetVersion="$DotnetCLINugetVersion" `
         -dCLISDKMsiSourcePath="$CLISDKMSIFile" `
         -dUpgradeCode="$UpgradeCode" `
         -dSharedFXMsiSourcePath="$SharedFxMSIFile" `
+        -dHostFXRMsiSourcePath="$HostFxrMSIFile" `
         -dSharedHostMsiSourcePath="$SharedHostMSIFile" `
         -arch "$Architecture" `
         -ext WixBalExtension.dll `
@@ -108,7 +112,5 @@ if(!(Test-Path $DotnetBundleOutput))
 }
 
 Write-Host -ForegroundColor Green "Successfully created dotnet bundle - $DotnetBundleOutput"
-
-_ $RepoRoot\test\Installer\testmsi.ps1 @("$CLISDKMSIFile")
 
 exit $LastExitCode

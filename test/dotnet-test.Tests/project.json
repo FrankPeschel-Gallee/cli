@@ -3,9 +3,9 @@
   "dependencies": {
     "Microsoft.NETCore.App": {
       "type": "platform",
-      "version": "1.0.0-rc2-*"
+      "version": "1.0.1"
     },
-    "Newtonsoft.Json": "7.0.1",
+    "Newtonsoft.Json": "9.0.1",
     "Microsoft.DotNet.Tools.Tests.Utilities": {
       "target": "project"
     },
@@ -15,24 +15,37 @@
     "Microsoft.DotNet.ProjectModel": {
       "target": "project"
     },
-    "System.Net.NameResolution": "4.0.0-rc2-24015",
-    "System.Net.Sockets": "4.1.0-rc2-24015",
-    "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24015",
-    "xunit": "2.1.0",
-    "dotnet-test-xunit": "1.0.0-dev-140469-38"
+    "Microsoft.DotNet.InternalAbstractions": {
+      "target": "project"
+    },
+    "System.Net.NameResolution": "4.0.0",
+    "System.Net.Sockets": "4.1.0",
+    "System.Runtime.Serialization.Primitives": "4.1.1",
+    "xunit": "2.2.0-beta3-build3330",
+    "dotnet-test-xunit": "1.0.0-rc2-350904-49",
+    "Microsoft.DotNet.PlatformAbstractions": "1.0.1-beta-000933"
   },
   "frameworks": {
     "netcoreapp1.0": {
       "imports": [
-        "netstandardapp1.5",
-        "dnxcore50",
-        "portable-net45+win8"
+        "dotnet5.4",
+        "portable-net451+win8"
       ]
     }
   },
-  "content": [
-    "../../TestAssets/TestProjects/ProjectWithTests/**/*",
-    "../../TestAssets/TestProjects/global.json"
-  ],
-  "testRunner": "xunit"
+  "testRunner": "xunit",
+  "publishOptions": {
+    "include": [
+      "../../TestAssets/TestProjects/ProjectsWithTests/**/*",
+      "../../TestAssets/TestProjects/global.json"
+    ]
+  },
+  "buildOptions": {
+    "copyToOutput": {
+      "include": [
+        "../../TestAssets/TestProjects/ProjectsWithTests/**/*",
+        "../../TestAssets/TestProjects/global.json"
+      ]
+    }
+  }
 }

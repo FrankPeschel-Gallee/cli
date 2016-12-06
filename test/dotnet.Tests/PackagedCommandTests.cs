@@ -4,32 +4,58 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Microsoft.DotNet.Cli.Utils;
-using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
 using System.Runtime.InteropServices;
-using Xunit;
 using FluentAssertions;
+using Microsoft.DotNet.Cli.Utils;
+using Microsoft.DotNet.TestFramework;
+using Microsoft.DotNet.Tools.Test.Utilities;
+using Microsoft.DotNet.InternalAbstractions;
+using Xunit;
 
 namespace Microsoft.DotNet.Tests
 {
     public class PackagedCommandTests : TestBase
     {
-        private readonly string _testProjectsRoot;
-        private readonly string _desktopTestProjectsRoot;
+        private readonly TestAssetsManager _desktopTestAssetsManager = GetTestGroupTestAssetsManager("DesktopTestProjects");
 
-        public PackagedCommandTests()
+        public static IEnumerable<object[]> DependencyToolArguments
         {
-            _testProjectsRoot = Path.Combine(AppContext.BaseDirectory, "TestAssets", "TestProjects");
-            _desktopTestProjectsRoot = Path.Combine(AppContext.BaseDirectory, "TestAssets", "DesktopTestProjects");
+            get
+            {
+                var rid = RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier();
+                var projectOutputPath = $"AppWithDirectDepDesktopAndPortable\\bin\\Debug\\net451\\{rid}\\dotnet-desktop-and-portable.exe";
+                return new[]
+                {
+                    new object[] { "CoreFX", ".NETCoreApp,Version=v1.0", "lib\\netcoreapp1.0\\dotnet-desktop-and-portable.dll", true },
+                    new object[] { "NetFX", ".NETFramework,Version=v4.5.1", projectOutputPath, true }
+                };
+            }
+        }
+
+        public static IEnumerable<object[]> LibraryDependencyToolArguments
+        {
+            get
+            {
+                var rid = RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier();
+                var projectOutputPath = $"LibraryWithDirectDependencyDesktopAndPortable\\bin\\Debug\\net451\\dotnet-desktop-and-portable.exe";
+                return new[]
+                {
+                    new object[] { "CoreFX", ".NETStandard,Version=v1.6", "lib\\netstandard1.6\\dotnet-desktop-and-portable.dll", true },
+                    new object[] { "NetFX", ".NETFramework,Version=v4.5.1", projectOutputPath, true }
+                };
+            }
         }
 
         [Theory]
-        [InlineData("AppWithDirectAndToolDependency")]
+        [InlineData("AppWithDirectAndToolDep")]
         [InlineData("AppWithToolDependency")]
         public void TestProjectToolIsAvailableThroughDriver(string appName)
         {
-            var appDirectory = Path.Combine(_testProjectsRoot, appName);
+            var testInstance = TestAssetsManager
+                .CreateTestInstance(appName, identifier: appName)
+                .WithLockFiles();
+
+            var appDirectory = testInstance.Path;
 
             new BuildCommand(Path.Combine(appDirectory, "project.json"))
                 .Execute()
@@ -39,22 +65,43 @@ namespace Microsoft.DotNet.Tests
             CommandResult result = new PortableCommand { WorkingDirectory = appDirectory }
                 .ExecuteWithCapturedOutput();
 
-            result.Should().HaveStdOut("Hello Portable World!" + Environment.NewLine);
+            result.Should().HaveStdOutContaining("Hello Portable World!" + Environment.NewLine);
             result.Should().NotHaveStdErr();
             result.Should().Pass();
         }
 
-        // need conditional theories so we can skip on non-Windows
-        [Theory]
-        [MemberData("DependencyToolArguments")]
-        public void TestFrameworkSpecificDependencyToolsCanBeInvoked(string framework, string args, string expectedDependencyToolPath)
+        [Fact]
+        public void CanInvokeToolWhosePackageNameIsDifferentFromDllName()
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                return;
-            }
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("AppWithDepOnToolWithOutputName")
+                .WithLockFiles();
 
-            var appDirectory = Path.Combine(_desktopTestProjectsRoot, "AppWithDirectDependencyDesktopAndPortable");
+            var appDirectory = testInstance.Path;
+
+            new BuildCommand(Path.Combine(appDirectory, "project.json"))
+                .Execute()
+                .Should()
+                .Pass();
+
+            CommandResult result = new GenericCommand("tool-with-output-name") { WorkingDirectory = appDirectory }
+                .ExecuteWithCapturedOutput();
+
+            result.Should().HaveStdOutContaining("Tool with output name!");
+            result.Should().NotHaveStdErr();
+            result.Should().Pass();
+        }
+
+        [Fact]
+        public void CanInvokeToolFromDirectDependenciesIfPackageNameDifferentFromToolName()
+        {
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("AppWithDirectDepWithOutputName")
+                .WithBuildArtifacts()
+                .WithLockFiles();
+
+            var appDirectory = testInstance.Path;
+            const string framework = ".NETCoreApp,Version=v1.0";
 
             new BuildCommand(Path.Combine(appDirectory, "project.json"))
                 .Execute()
@@ -62,19 +109,78 @@ namespace Microsoft.DotNet.Tests
                 .Pass();
 
             CommandResult result = new DependencyToolInvokerCommand { WorkingDirectory = appDirectory }
-                    .ExecuteWithCapturedOutput(framework, args);
+                    .ExecuteWithCapturedOutput("tool-with-output-name", framework, string.Empty);
 
-                result.Should().HaveStdOutContaining(framework);
-                result.Should().HaveStdOutContaining(args);
-                result.Should().HaveStdOutContaining(expectedDependencyToolPath);
-                result.Should().NotHaveStdErr();
-                result.Should().Pass();
+            result.Should().HaveStdOutContaining("Tool with output name!");
+            result.Should().NotHaveStdErr();
+            result.Should().Pass();
+        }
+
+        // need conditional theories so we can skip on non-Windows
+        [Theory]
+        [MemberData("DependencyToolArguments")]
+        public void TestFrameworkSpecificDependencyToolsCanBeInvoked(string identifier, string framework, string expectedDependencyToolPath, bool windowsOnly)
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && windowsOnly)
+            {
+                return;
+            }
+
+            var testInstance = _desktopTestAssetsManager
+                .CreateTestInstance("AppWithDirectDepDesktopAndPortable", identifier: identifier)
+                .WithBuildArtifacts()
+                .WithLockFiles();
+
+            var appDirectory = testInstance.Path;
+
+            new BuildCommand(Path.Combine(appDirectory, "project.json"))
+                .Execute()
+                .Should()
+                .Pass();
+
+            CommandResult result = new DependencyToolInvokerCommand { WorkingDirectory = appDirectory }
+                    .ExecuteWithCapturedOutput("desktop-and-portable", framework, identifier);
+
+            result.Should().HaveStdOutContaining(framework);
+            result.Should().HaveStdOutContaining(identifier);
+            result.Should().HaveStdOutContaining(expectedDependencyToolPath);
+            result.Should().NotHaveStdErr();
+            result.Should().Pass();
+        }
+
+        [Theory]
+        [MemberData("LibraryDependencyToolArguments")]
+        public void TestFrameworkSpecificLibraryDependencyToolsCannotBeInvoked(string identifier, string framework, string expectedDependencyToolPath, bool windowsOnly)
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && windowsOnly)
+            {
+                return;
+            }
+            
+            var testInstance = _desktopTestAssetsManager
+                .CreateTestInstance("LibraryWithDirectDependencyDesktopAndPortable", identifier: identifier)
+                .WithLockFiles();
+
+            var appDirectory = testInstance.Path;
+
+            new BuildCommand(Path.Combine(appDirectory, "project.json"))
+                .Execute()
+                .Should()
+                .Pass();
+
+            CommandResult result = new DependencyToolInvokerCommand { WorkingDirectory = appDirectory }
+                    .ExecuteWithCapturedOutput("desktop-and-portable", framework, identifier);
+
+            result.Should().HaveStdOutContaining("Command not found");
+            result.Should().Fail();
         }
 
         [Fact]
         public void ToolsCanAccessDependencyContextProperly()
         {
-            var appDirectory = Path.Combine(_testProjectsRoot, "DependencyContextFromTool");
+            var testInstance = TestAssetsManager.CreateTestInstance("DependencyContextFromTool");
+
+            var appDirectory = testInstance.Path;
 
             CommandResult result = new DependencyContextTestCommand() { WorkingDirectory = appDirectory }
                 .Execute(Path.Combine(appDirectory, "project.json"));
@@ -82,25 +188,14 @@ namespace Microsoft.DotNet.Tests
             result.Should().Pass();
         }
 
-        public static IEnumerable<object[]> DependencyToolArguments
-        {
-            get
-            {
-                var rid = PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier();
-                var projectOutputPath  = $"AppWithDirectDependencyDesktopAndPortable\\bin\\Debug\\net451\\{rid}\\dotnet-desktop-and-portable.exe";
-                return new[]
-                {
-                    new object[] { ".NETStandard,Version=v1.5", "CoreFX", "lib\\netstandard1.5\\dotnet-desktop-and-portable.dll" },
-                    new object[] { ".NETFramework,Version=v4.5.1", "NetFX", projectOutputPath }
-                };
-            }
-        }
-
         [Fact]
         public void TestProjectDependencyIsNotAvailableThroughDriver()
         {
-            var appName = "AppWithDirectDependency";
-            var appDirectory = Path.Combine(_testProjectsRoot, appName);
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("AppWithDirectDep")
+                .WithLockFiles();
+
+            var appDirectory = testInstance.Path;
 
             new BuildCommand(Path.Combine(appDirectory, "project.json"))
                 .Execute()
@@ -114,7 +209,7 @@ namespace Microsoft.DotNet.Tests
             {
                 CommandResult result = new HelloCommand().ExecuteWithCapturedOutput();
 
-                result.StdOut.Should().Contain("No executable found matching command");
+                result.StdErr.Should().Contain("No executable found matching command");
                 result.Should().Fail();
             }
             finally
@@ -163,6 +258,29 @@ namespace Microsoft.DotNet.Tests
             }
         }
 
+        class GenericCommand : TestCommand
+        {
+            private readonly string _commandName;
+
+            public GenericCommand(string commandName)
+                : base("dotnet")
+            {
+                _commandName = commandName;
+            }
+
+            public override CommandResult Execute(string args = "")
+            {
+                args = $"{_commandName} {args}";
+                return base.Execute(args);
+            }
+
+            public override CommandResult ExecuteWithCapturedOutput(string args = "")
+            {
+                args = $"{_commandName} {args}";
+                return base.ExecuteWithCapturedOutput(args);
+            }
+        }
+
         class DependencyContextTestCommand : TestCommand
         {
             public DependencyContextTestCommand()
@@ -179,26 +297,6 @@ namespace Microsoft.DotNet.Tests
             public override CommandResult ExecuteWithCapturedOutput(string path)
             {
                 var args = $"dependency-context-test {path}";
-                return base.ExecuteWithCapturedOutput(args);
-            }
-        }
-
-        class DependencyToolInvokerCommand : TestCommand
-        {
-            public DependencyToolInvokerCommand()
-                : base("dotnet")
-            {
-            }
-
-            public CommandResult Execute(string framework, string additionalArgs)
-            {
-                var args = $"dependency-tool-invoker desktop-and-portable --framework {framework} {additionalArgs}";
-                return base.Execute(args);
-            }
-
-            public CommandResult ExecuteWithCapturedOutput(string framework, string additionalArgs)
-            {
-                var args = $"dependency-tool-invoker desktop-and-portable --framework {framework} {additionalArgs}";
                 return base.ExecuteWithCapturedOutput(args);
             }
         }

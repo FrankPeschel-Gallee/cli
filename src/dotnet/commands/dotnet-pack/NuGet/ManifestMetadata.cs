@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using NuGet.Versioning;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     public class ManifestMetadata
     {
@@ -76,6 +76,8 @@ namespace NuGet
         public string Language { get; set; }
 
         public string Tags { get; set; }
+
+        public bool Serviceable { get; set; }
 
         public IEnumerable<PackageDependencySet> DependencySets { get; set; } = new List<PackageDependencySet>();
 

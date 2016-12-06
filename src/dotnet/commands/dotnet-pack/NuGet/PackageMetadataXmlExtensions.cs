@@ -9,7 +9,7 @@ using NuGet.Frameworks;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
 
-namespace NuGet
+namespace NuGet.Legacy
 {
     internal static class PackageMetadataXmlExtensions
     {
@@ -51,6 +51,10 @@ namespace NuGet
             AddElementIfNotNull(elem, ns, "copyright", metadata.Copyright);
             AddElementIfNotNull(elem, ns, "language", metadata.Language);
             AddElementIfNotNull(elem, ns, "tags", metadata.Tags);
+            if (metadata.Serviceable)
+            {
+                elem.Add(new XElement(ns + "serviceable", metadata.Serviceable));
+            }
 
             elem.Add(GetXElementFromGroupableItemSets(
                 ns,

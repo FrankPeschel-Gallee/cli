@@ -1,16 +1,13 @@
 {
   "version": "1.0.0-*",
   "dependencies": {
-    "Microsoft.Extensions.DependencyModel": {
-      "target": "project",
-      "version": "1.0.0-*"
-    }
+    "Microsoft.Extensions.DependencyModel": "1.0.1-beta-000933"
   },
   "frameworks": {
-    "netstandard1.5": {
+    "netstandard1.6": {
       "imports": "dnxcore50",
       "dependencies": {
-        "NETStandard.Library": "1.5.0-rc2-24015"
+        "NETStandard.Library": "1.6.0"
       }
     },
     "net451": {}

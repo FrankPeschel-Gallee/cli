@@ -4,32 +4,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-using Xunit;
 using Microsoft.DotNet.Cli.Utils;
-using Microsoft.DotNet.ProjectModel;
+using Microsoft.DotNet.InternalAbstractions;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
-using System.Threading;
+using Xunit;
 
 namespace StreamForwarderTests
 {
     public class StreamForwarderTests : TestBase
     {
-        private static readonly string s_rid = PlatformServices.Default.Runtime.GetLegacyRestoreRuntimeIdentifier();
-        private static readonly string s_testProjectRoot = Path.Combine(AppContext.BaseDirectory, "TestAssets", "TestProjects");
-
-        private TempDirectory _root;
+        private static readonly string s_rid = RuntimeEnvironmentRidExtensions.GetLegacyRestoreRuntimeIdentifier();
 
         public static void Main()
         {
             Console.WriteLine("Dummy Entrypoint");
-        }
-
-        public StreamForwarderTests()
-        {
-            _root = Temp.CreateDirectory();
         }
 
         public static IEnumerable<object[]> ForwardingTheoryVariations
@@ -57,7 +45,7 @@ namespace StreamForwarderTests
         [InlineData("123")]
         [InlineData("123\n")]
         public void TestNoForwardingNoCapture(string inputStr)
-        {   
+        {
             TestCapturingAndForwardingHelper(ForwardOptions.None, inputStr, null, new string[0]);
         }
 
@@ -65,11 +53,11 @@ namespace StreamForwarderTests
         [MemberData("ForwardingTheoryVariations")]
         public void TestForwardingOnly(string inputStr, string[] expectedWrites)
         {
-            for(int i = 0; i < expectedWrites.Length; ++i)
+            for (int i = 0; i < expectedWrites.Length; ++i)
             {
                 expectedWrites[i] += Environment.NewLine;
             }
-            
+
             TestCapturingAndForwardingHelper(ForwardOptions.WriteLine, inputStr, null, expectedWrites);
         }
 
@@ -77,13 +65,13 @@ namespace StreamForwarderTests
         [MemberData("ForwardingTheoryVariations")]
         public void TestCaptureOnly(string inputStr, string[] expectedWrites)
         {
-            for(int i = 0; i < expectedWrites.Length; ++i)
+            for (int i = 0; i < expectedWrites.Length; ++i)
             {
                 expectedWrites[i] += Environment.NewLine;
             }
 
             var expectedCaptured = string.Join("", expectedWrites);
-            
+
             TestCapturingAndForwardingHelper(ForwardOptions.Capture, inputStr, expectedCaptured, new string[0]);
         }
 
@@ -91,7 +79,7 @@ namespace StreamForwarderTests
         [MemberData("ForwardingTheoryVariations")]
         public void TestCaptureAndForwardingTogether(string inputStr, string[] expectedWrites)
         {
-            for(int i = 0; i < expectedWrites.Length; ++i)
+            for (int i = 0; i < expectedWrites.Length; ++i)
             {
                 expectedWrites[i] += Environment.NewLine;
             }
@@ -131,15 +119,15 @@ namespace StreamForwarderTests
 
         private string SetupTestProject()
         {
-            var sourceTestProjectPath = Path.Combine(s_testProjectRoot, "OutputStandardOutputAndError");
 
-            var binTestProjectPath = _root.CopyDirectory(sourceTestProjectPath).Path;
+            var testInstance = TestAssetsManager.CreateTestInstance("OutputStandardOutputAndError")
+                .WithLockFiles();
 
-            var buildCommand = new BuildCommand(Path.Combine(binTestProjectPath, "project.json"));
+            var buildCommand = new BuildCommand(Path.Combine(testInstance.Path, "project.json"));
             buildCommand.Execute();
 
             var buildOutputExe = "OutputStandardOutputAndError" + Constants.ExeSuffix;
-            var buildOutputPath = Path.Combine(binTestProjectPath, "bin/Debug/netstandardapp1.5", buildOutputExe);
+            var buildOutputPath = Path.Combine(testInstance.Path, "bin/Debug/netcoreapp1.0", buildOutputExe);
 
             return buildOutputPath;
         }

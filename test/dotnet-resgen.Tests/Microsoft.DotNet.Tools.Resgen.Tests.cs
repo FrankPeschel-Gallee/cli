@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using Microsoft.Extensions.PlatformAbstractions;
 using Xunit;
 using System;
 
@@ -13,24 +12,16 @@ namespace Microsoft.DotNet.Tools.Resgen.Tests
 {
     public class ResgenTests : TestBase
     {
-        private readonly string _testProjectsRoot;
-        private readonly TempDirectory _root;
-
-        public ResgenTests()
-        {
-            _testProjectsRoot = Path.Combine(AppContext.BaseDirectory, "TestAssets", "TestProjects");
-            _root = Temp.CreateDirectory();
-        }
-
         [Fact]
         public void Test_Build_Project_with_Resources_with_Space_in_Path_Should_Succeed()
         {
-            var spaceBufferDirectory = _root.CreateDirectory("space directory");
-            var testAppDir = spaceBufferDirectory.CreateDirectory("TestProjectWithResource");
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("TestProjectWithResource", identifier: "A SPACE")
+                .WithBuildArtifacts()
+                .WithLockFiles();
 
-            CopyProjectToTempDir(Path.Combine(_testProjectsRoot, "TestProjectWithResource"), testAppDir);
-
-            var testProject = GetProjectPath(testAppDir);
+            var testProject = Path.Combine(testInstance.Path, "project.json");
+            
             var buildCommand = new BuildCommand(testProject);
 
             buildCommand.Execute().Should().Pass();

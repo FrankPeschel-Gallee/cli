@@ -1,16 +1,24 @@
-﻿using System.Collections.Generic;
-using System.IO;
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using Microsoft.DotNet.ProjectModel;
 using Microsoft.DotNet.ProjectModel.Compilation;
 using Microsoft.DotNet.ProjectModel.Graph;
-using Microsoft.Extensions.DependencyModel;
 
 namespace Microsoft.DotNet.Cli.Compiler.Common
 {
     public static class LibraryExporterExtensions
     {
+        public static IEnumerable<LibraryExport> GetAllProjectTypeDependencies(this LibraryExporter exporter)
+        {
+            return
+                exporter.GetDependencies(LibraryType.Project)
+                    .Concat(exporter.GetDependencies(LibraryType.MSBuildProject));
+        }
+
         public static void CopyTo(this IEnumerable<LibraryAsset> assets, string destinationPath)
         {
             if (!Directory.Exists(destinationPath))
@@ -20,7 +28,9 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
 
             foreach (var asset in assets)
             {
-                File.Copy(asset.ResolvedPath, Path.Combine(destinationPath, Path.GetFileName(asset.ResolvedPath)), overwrite: true);
+                var file = Path.Combine(destinationPath, Path.GetFileName(asset.ResolvedPath));
+                File.Copy(asset.ResolvedPath, file, overwrite: true);
+                RemoveFileAttribute(file, FileAttributes.ReadOnly);
             }
         }
 
@@ -37,6 +47,19 @@ namespace Microsoft.DotNet.Cli.Compiler.Common
                 var transformedFile = asset.GetTransformedFile(tempLocation);
 
                 File.Copy(transformedFile, targetName, overwrite: true);
+                RemoveFileAttribute(targetName, FileAttributes.ReadOnly);
+            }
+        }
+        
+        private static void RemoveFileAttribute(String file, FileAttributes attribute)
+        {
+            if (File.Exists(file))
+            {
+                var fileAttributes = File.GetAttributes(file);
+                if ((fileAttributes & attribute) == attribute)
+                {
+                    File.SetAttributes(file, fileAttributes & ~attribute);
+                }
             }
         }
 

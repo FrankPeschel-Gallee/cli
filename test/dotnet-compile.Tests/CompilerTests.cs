@@ -13,34 +13,24 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
 {
     public class CompilerTests : TestBase
     {
-        private readonly string _testProjectsRoot;
-
-        public CompilerTests()
-        {
-            _testProjectsRoot = Path.Combine(AppContext.BaseDirectory, "TestAssets", "TestProjects");
-        }
-
         [Fact]
         public void XmlDocumentationFileIsGenerated()
         {
-            // create unique directories in the 'temp' folder
-            var root = Temp.CreateDirectory();
-            root.CopyFile(Path.Combine(_testProjectsRoot, "global.json"));
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("TestAppWithLibrary")
+                .WithLockFiles();
 
-            var testLibDir = root.CreateDirectory("TestLibrary");
-            var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestAppWithLibrary", "TestLibrary");
-
-            CopyProjectToTempDir(sourceTestLibDir, testLibDir);
+            var testLibDir = Path.Combine(testInstance.TestRoot, "TestLibrary");
 
             // run compile
-            var outputDir = Path.Combine(testLibDir.Path, "bin");
-            var testProject = GetProjectPath(testLibDir);
-            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var outputDir = Path.Combine(testLibDir, "bin");
+            var testProject = Path.Combine(testLibDir, "project.json");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultLibraryFramework);
             var result = buildCommand.ExecuteWithCapturedOutput();
             result.Should().Pass();
 
             // verify the output xml file
-            var outputXml = Path.Combine(outputDir, "Debug", DefaultFramework, "TestLibrary.xml");
+            var outputXml = Path.Combine(outputDir, "Debug", DefaultLibraryFramework, "TestLibrary.xml");
             Console.WriteLine("OUTPUT XML PATH: " + outputXml);
             Assert.True(File.Exists(outputXml));
             Assert.Contains("Gets the message from the helper", File.ReadAllText(outputXml));
@@ -49,16 +39,15 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
         [Fact]
         public void SatelliteAssemblyIsGeneratedByDotnetBuild()
         {
-            // create unique directories in the 'temp' folder
-            var root = Temp.CreateDirectory();
-            var testLibDir = root.CreateDirectory("TestProjectWithCultureSpecificResource");
-            var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestProjectWithCultureSpecificResource");
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("TestProjectWithCultureSpecificResource")
+                .WithLockFiles();
 
-            CopyProjectToTempDir(sourceTestLibDir, testLibDir);
+            var testLibDir = testInstance.TestRoot;
 
             // run compile on a project with resources
-            var outputDir = Path.Combine(testLibDir.Path, "bin");
-            var testProject = GetProjectPath(testLibDir);
+            var outputDir = Path.Combine(testLibDir, "bin");
+            var testProject = Path.Combine(testLibDir, "project.json");
             var buildCmd = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
             var result = buildCmd.ExecuteWithCapturedOutput();
             result.Should().Pass();
@@ -75,16 +64,16 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
         [Fact]
         public void LibraryWithAnalyzer()
         {
-            var root = Temp.CreateDirectory();
-            var testLibDir = root.CreateDirectory("TestLibraryWithAnalyzer");
-            var sourceTestLibDir = Path.Combine(_testProjectsRoot, "TestLibraryWithAnalyzer");
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("TestLibraryWithAnalyzer")
+                .WithLockFiles();
 
-            CopyProjectToTempDir(sourceTestLibDir, testLibDir);
+            var testLibDir = testInstance.TestRoot;
 
             // run compile
-            var outputDir = Path.Combine(testLibDir.Path, "bin");
-            var testProject = GetProjectPath(testLibDir);
-            var buildCmd = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var outputDir = Path.Combine(testLibDir, "bin");
+            var testProject = Path.Combine(testLibDir, "project.json");
+            var buildCmd = new BuildCommand(testProject, output: outputDir, framework: DefaultLibraryFramework);
             var result = buildCmd.ExecuteWithCapturedOutput();
             result.Should().Pass();
 
@@ -96,12 +85,15 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
         {
             var root = Temp.CreateDirectory();
 
-            var spaceBufferDirectory = root.CreateDirectory("space directory");
-            var testAppDir = spaceBufferDirectory.CreateDirectory("TestAppCompilationContext");
+            var testInstance = TestAssetsManager
+                .CreateTestInstance("TestAppCompilationContext", identifier: "A SPACE")
+                .WithLockFiles();
 
-            CopyProjectToTempDir(Path.Combine(_testProjectsRoot, "TestAppCompilationContext"), testAppDir);
+            var testProjectDir = Path.Combine(
+                    Directory.GetParent(testInstance.TestRoot).FullName, 
+                    "TestAppCompilationContext", 
+                    "TestApp");
 
-            var testProjectDir = Path.Combine(_testProjectsRoot, "TestAppCompilationContext", "TestApp");
             var testProject = Path.Combine(testProjectDir, "project.json");
 
             var buildCommand = new BuildCommand(testProject);
@@ -148,6 +140,49 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
         }
 
         [Fact]
+        public void EmbeddedResourcesAreCopied()
+        {
+            var testInstance = TestAssetsManager.CreateTestInstance("EndToEndTestApp")
+                                                .WithLockFiles()
+                                                .WithBuildArtifacts();
+
+            var root = testInstance.TestRoot;
+
+            // run compile
+            var outputDir = Path.Combine(root, "bin");
+            var testProject = ProjectUtils.GetProjectJson(root, "EndToEndTestApp");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var result = buildCommand.ExecuteWithCapturedOutput();
+            result.Should().Pass();
+
+            var objDirInfo = new DirectoryInfo(Path.Combine(root, "obj", "Debug", DefaultFramework));
+            objDirInfo.Should().HaveFile("EndToEndTestApp.resource1.resources");
+            objDirInfo.Should().HaveFile("myresource.resources");
+            objDirInfo.Should().HaveFile("EndToEndTestApp.defaultresource.resources");
+        }
+
+        [Fact]
+        public void CopyToOutputFilesAreCopied()
+        {
+            var testInstance = TestAssetsManager.CreateTestInstance("EndToEndTestApp")
+                                                .WithLockFiles()
+                                                .WithBuildArtifacts();
+
+            var root = testInstance.TestRoot;
+
+            // run compile
+            var outputDir = Path.Combine(root, "bin");
+            var testProject = ProjectUtils.GetProjectJson(root, "EndToEndTestApp");
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var result = buildCommand.ExecuteWithCapturedOutput();
+            result.Should().Pass();
+
+            var outputDirInfo = new DirectoryInfo(Path.Combine(outputDir, "copy"));
+            outputDirInfo.Should().HaveFile("file.txt");
+            outputDirInfo.Should().NotHaveFile("fileex.txt");
+        }
+
+        [Fact]
         public void CanSetOutputAssemblyNameForLibraries()
         {
             var testInstance =
@@ -158,7 +193,7 @@ namespace Microsoft.DotNet.Tools.Compiler.Tests
             var root = testInstance.TestRoot;
             var outputDir = Path.Combine(root, "bin");
             var testProject = ProjectUtils.GetProjectJson(root, "LibraryWithOutputAssemblyName");
-            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultFramework);
+            var buildCommand = new BuildCommand(testProject, output: outputDir, framework: DefaultLibraryFramework);
             var result = buildCommand.ExecuteWithCapturedOutput();
             result.Should().Pass();
 

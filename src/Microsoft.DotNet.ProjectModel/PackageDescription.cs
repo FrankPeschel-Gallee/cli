@@ -12,6 +12,7 @@ namespace Microsoft.DotNet.ProjectModel
     {
         public PackageDescription(
             string path,
+            string hashPath,
             LockFilePackageLibrary package,
             LockFileTargetLibrary lockFileLibrary,
             IEnumerable<LibraryRange> dependencies,
@@ -27,14 +28,19 @@ namespace Microsoft.DotNet.ProjectModel
                   compatible: compatible,
                   framework: null)
         {
+            HashPath = hashPath;
             PackageLibrary = package;
         }
+
+        public string HashPath { get; }
 
         public LockFilePackageLibrary PackageLibrary { get; }
 
         public override IEnumerable<LockFileItem> RuntimeAssemblies => FilterPlaceholders(base.RuntimeAssemblies);
 
         public override IEnumerable<LockFileItem> CompileTimeAssemblies => FilterPlaceholders(base.CompileTimeAssemblies);
+
+        public bool HasCompileTimePlaceholder => base.CompileTimeAssemblies.Any() && base.CompileTimeAssemblies.All(a => PackageDependencyProvider.IsPlaceholderFile(a));
 
         private static IEnumerable<LockFileItem> FilterPlaceholders(IEnumerable<LockFileItem> items)
         {
