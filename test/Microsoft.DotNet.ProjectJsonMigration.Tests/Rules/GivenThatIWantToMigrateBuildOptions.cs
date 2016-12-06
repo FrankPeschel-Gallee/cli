@@ -1,6 +1,6 @@
 ﻿using Microsoft.Build.Construction;
 using Microsoft.DotNet.ProjectJsonMigration;
-using Microsoft.DotNet.ProjectModel;
+using Microsoft.DotNet.Internal.ProjectModel;
 using Microsoft.DotNet.Tools.Test.Utilities;
 using NuGet.Frameworks;
 using System;
@@ -9,14 +9,15 @@ using System.Linq;
 using Xunit;
 using FluentAssertions;
 using Microsoft.DotNet.ProjectJsonMigration.Rules;
-using Microsoft.DotNet.ProjectModel.Files;
+using Microsoft.DotNet.Internal.ProjectModel.Files;
+using System.Collections.Generic;
 
 namespace Microsoft.DotNet.ProjectJsonMigration.Tests
 {
     public class GivenThatIWantToMigrateBuildOptions : TestBase
     {
         [Fact]
-        public void Specified_default_properties_are_removed_when_they_exists_in_the_csproj_template()
+        public void SpecifiedDefaultPropertiesAreRemovedWhenTheyExistInTheCsprojTemplate()
         {
             // Setup project with default properties
             var defaultPropertiesExpectedToBeRemoved = new string[]
@@ -39,7 +40,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
             var testProjectDirectory = TestAssetsManager.CreateTestInstance("TestAppWithRuntimeOptions").Path;
             var projectContext = ProjectContext.Create(testProjectDirectory, FrameworkConstants.CommonFrameworks.NetCoreApp10);
 
-            var testSettings = new MigrationSettings(testProjectDirectory, testProjectDirectory, "1.0.0", templateProj);
+            var testSettings = new MigrationSettings(testProjectDirectory, testProjectDirectory, templateProj);
             var testInputs = new MigrationRuleInputs(new[] {projectContext}, templateProj, templateProj.AddItemGroup(),
                 templateProj.AddPropertyGroup());
             new MigrateBuildOptionsRule().Apply(testSettings, testInputs);
@@ -48,28 +49,22 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_empty_buildOptions_populates_only_AssemblyName_and_OutputType()
+        public void MigratingEmptyBuildOptionsPopulatesOnlyCompileAndEmbeddedResource()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
                     ""buildOptions"": { }
                 }");
 
-            mockProj.Properties.Count().Should().Be(2);
-            mockProj.Properties.Any(
-                p =>
-                    !(p.Name.Equals("AssemblyName", StringComparison.Ordinal) ||
-                      p.Name.Equals("OutputType", StringComparison.Ordinal))).Should().BeFalse();
-
             mockProj.Items.Count().Should().Be(2);
             mockProj.Items.First(i => i.ItemType == "Compile").Include.Should().Be(@"**\*.cs");
-            mockProj.Items.First(i => i.ItemType == "Compile").Exclude.Should().Be(@"bin\**;obj\**;**\*.xproj;packages\**");
+            mockProj.Items.First(i => i.ItemType == "Compile").Exclude.Should().BeEmpty();
             mockProj.Items.First(i => i.ItemType == "EmbeddedResource").Include.Should().Be(@"compiler\resources\**\*;**\*.resx");
-            mockProj.Items.First(i => i.ItemType == "EmbeddedResource").Exclude.Should().Be(@"bin\**;obj\**;**\*.xproj;packages\**");
+            mockProj.Items.First(i => i.ItemType == "EmbeddedResource").Exclude.Should().BeEmpty();
         }
 
         [Fact]
-        public void Migrating_EmitEntryPoint_true_populates_OutputType_field()
+        public void MigratingEmitEntryPointTruePopulatesOutputTypeField()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -83,7 +78,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_EmitEntryPoint_false_populates_OutputType_fields()
+        public void MigratingEmitEntryPointFalsePopulatesOutputTypeFields()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -97,7 +92,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_define_populates_DefineConstants()
+        public void MigratingDefinePopulatesDefineConstants()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -107,11 +102,12 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
                 }");
 
             mockProj.Properties.Count(p => p.Name == "DefineConstants").Should().Be(1);
-            mockProj.Properties.First(p => p.Name == "DefineConstants").Value.Should().Be("DEBUG;TRACE");
+            mockProj.Properties.First(p => p.Name == "DefineConstants")
+                .Value.Should().Be("$(DefineConstants);DEBUG;TRACE");
         }
 
         [Fact]
-        public void Migrating_nowarn_populates_NoWarn()
+        public void MigratingNowarnPopulatesNoWarn()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -121,11 +117,11 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
                 }");
 
             mockProj.Properties.Count(p => p.Name == "NoWarn").Should().Be(1);
-            mockProj.Properties.First(p => p.Name == "NoWarn").Value.Should().Be("CS0168;CS0219");
+            mockProj.Properties.First(p => p.Name == "NoWarn").Value.Should().Be("$(NoWarn);CS0168;CS0219");
         }
 
         [Fact]
-        public void Migrating_warningsAsErrors_populates_WarningsAsErrors()
+        public void MigratingWarningsAsErrorsPopulatesWarningsAsErrors()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -148,7 +144,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_allowUnsafe_populates_AllowUnsafeBlocks()
+        public void MigratingAllowUnsafePopulatesAllowUnsafeBlocks()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -171,7 +167,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_optimize_populates_Optimize()
+        public void MigratingOptimizePopulatesOptimize()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -194,7 +190,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_platform_populates_PlatformTarget()
+        public void MigratingPlatformPopulatesPlatformTarget()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -228,7 +224,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_languageVersion_populates_LangVersion()
+        public void MigratingLanguageVersionPopulatesLangVersion()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -242,7 +238,21 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_keyFile_populates_AssemblyOriginatorKeyFile_and_SignAssembly()
+        public void MigratingLanguageVersionRemovesCsharpInLangVersion()
+        {
+            var mockProj = RunBuildOptionsRuleOnPj(@"
+                {
+                    ""buildOptions"": {
+                        ""languageVersion"": ""csharp5""
+                    }
+                }");
+
+            mockProj.Properties.Count(p => p.Name == "LangVersion").Should().Be(1);
+            mockProj.Properties.First(p => p.Name == "LangVersion").Value.Should().Be("5");
+        }
+
+        [Fact]
+        public void MigratingKeyFilePopulatesAssemblyOriginatorKeyFileAndSignAssembly()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -256,10 +266,14 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
 
             mockProj.Properties.Count(p => p.Name == "SignAssembly").Should().Be(1);
             mockProj.Properties.First(p => p.Name == "SignAssembly").Value.Should().Be("true");
+
+            mockProj.Properties.Count(p => p.Name == "PublicSign").Should().Be(1);
+            mockProj.Properties.First(p => p.Name == "PublicSign").Value.Should().Be("true");
+            mockProj.Properties.First(p => p.Name == "PublicSign").Condition.Should().Be(" '$(OS)' != 'Windows_NT' ");
         }
 
         [Fact]
-        public void Migrating_delaySign_populates_DelaySign()
+        public void MigratingDelaySignPopulatesDelaySign()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -282,7 +296,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_publicSign_populates_PublicSign()
+        public void MigratingPublicSignPopulatesPublicSign()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -305,7 +319,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_debugType_populates_DebugType()
+        public void MigratingDebugTypePopulatesDebugType()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -329,21 +343,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         [Fact]
-        public void Migrating_outputName_populates_AssemblyName()
-        {
-            var mockProj = RunBuildOptionsRuleOnPj(@"
-                {
-                    ""buildOptions"": {
-                        ""outputName"": ""ARandomName""
-                    }
-                }");
-
-            mockProj.Properties.Count(p => p.Name == "AssemblyName").Should().Be(1);
-            mockProj.Properties.First(p => p.Name == "AssemblyName").Value.Should().Be("ARandomName");
-        }
-
-        [Fact]
-        public void Migrating_xmlDoc_populates_GenerateDocumentationFile()
+        public void MigratingXmlDocPopulatesGenerateDocumentationFile()
         {
             var mockProj = RunBuildOptionsRuleOnPj(@"
                 {
@@ -360,21 +360,12 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         [InlineData("compile", "Compile")]
         [InlineData("embed", "EmbeddedResource")]
         [InlineData("copyToOutput", "Content")]
-        private void Migrating_group_include_exclude_Populates_appropriate_ProjectItemElement(
+        private void MigratingGroupIncludeExcludePopulatesAppropriateProjectItemElement(
             string group,
             string itemName)
         {
             var testDirectory = Temp.CreateDirectory().Path;
-
-            Directory.CreateDirectory(Path.Combine(testDirectory, "root"));
-            Directory.CreateDirectory(Path.Combine(testDirectory, "src"));
-            File.WriteAllText(Path.Combine(testDirectory, "root", "file1.txt"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "root", "file2.txt"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "root", "file3.txt"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "src", "file1.cs"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "src", "file2.cs"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "src", "file3.cs"), "content");
-            File.WriteAllText(Path.Combine(testDirectory, "rootfile.cs"), "content");
+            WriteExtraFiles(testDirectory);
 
             var pj = @"
                 {
@@ -393,19 +384,12 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
 
             mockProj.Items.Count(i => i.ItemType.Equals(itemName, StringComparison.Ordinal)).Should().Be(2);
 
-            var defaultIncludePatterns = group == "compile" ? ProjectFilesCollection.DefaultCompileBuiltInPatterns
-                                       : group == "embed"   ? ProjectFilesCollection.DefaultResourcesBuiltInPatterns
-                                       : Enumerable.Empty<string>();
-
-            var defaultExcludePatterns = group == "copyToOutput" ? ProjectFilesCollection.DefaultPublishExcludePatterns
-                                       : ProjectFilesCollection.DefaultBuiltInExcludePatterns;
+            var defaultIncludePatterns = GetDefaultIncludePatterns(group);
+            var defaultExcludePatterns = GetDefaultExcludePatterns(group);
 
             foreach (var item in mockProj.Items.Where(i => i.ItemType.Equals(itemName, StringComparison.Ordinal)))
             {
-                if (item.ItemType == "Content")
-                {
-                    item.Metadata.Count(m => m.Name == "CopyToOutputDirectory").Should().Be(1);
-                }
+                VerifyContentMetadata(item);
 
                 if (item.Include.Contains(@"src\file1.cs"))
                 {
@@ -438,6 +422,118 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
                     }
                 }
             }
+        }
+
+        [Theory]
+        [InlineData("compile", "Compile")]
+        [InlineData("embed", "EmbeddedResource")]
+        [InlineData("copyToOutput", "Content")]
+        private void MigratingGroupIncludeOnlyPopulatesAppropriateProjectItemElement(
+            string group,
+            string itemName)
+        {
+            var testDirectory = Temp.CreateDirectory().Path;
+            WriteExtraFiles(testDirectory);
+
+            var pj = @"
+                {
+                    ""buildOptions"": {
+                        ""<group>"": [""root"", ""src"", ""rootfile.cs""]
+                    }
+                }".Replace("<group>", group);
+
+            var mockProj = RunBuildOptionsRuleOnPj(pj,
+                testDirectory: testDirectory);
+
+            Console.WriteLine(mockProj.RawXml);
+
+            mockProj.Items.Count(i => i.ItemType.Equals(itemName, StringComparison.Ordinal)).Should().Be(1);
+
+            var defaultIncludePatterns = GetDefaultIncludePatterns(group);
+            var defaultExcludePatterns = GetDefaultExcludePatterns(group);
+
+            foreach (var item in mockProj.Items.Where(i => i.ItemType.Equals(itemName, StringComparison.Ordinal)))
+            {
+                VerifyContentMetadata(item);
+
+                if (defaultIncludePatterns.Any())
+                {
+                    item.Include.Should()
+                        .Be(@"root\**\*;src\**\*;rootfile.cs;" + string.Join(";", defaultIncludePatterns).Replace("/", "\\"));
+                }
+                else
+                {
+                    item.Include.Should()
+                        .Be(@"root\**\*;src\**\*;rootfile.cs");
+                }
+
+                if (defaultExcludePatterns.Any())
+                {
+                    item.Exclude.Should()
+                        .Be(string.Join(";", defaultExcludePatterns).Replace("/", "\\"));
+                }
+                else
+                {
+                    item.Exclude.Should()
+                        .Be(string.Empty);
+                }
+            }
+        }
+
+        [Fact]
+        public void MigratingTestProjectAddsGenerateRuntimeConfigurationFiles()
+        {
+            var mockProj = RunBuildOptionsRuleOnPj(@"
+                {
+                    ""testRunner"": ""xunit""
+                }");
+
+            mockProj.Properties.Count(p => p.Name == "GenerateRuntimeConfigurationFiles").Should().Be(1);
+            mockProj.Properties.First(p => p.Name == "GenerateRuntimeConfigurationFiles").Value.Should().Be("true");
+        }
+
+        [Fact]
+        public void MigratingANonTestProjectDoesNotAddGenerateRuntimeConfigurationFiles()
+        {
+            var mockProj = RunBuildOptionsRuleOnPj(@"
+                {
+                }");
+
+            mockProj.Properties.Count(p => p.Name == "GenerateRuntimeConfigurationFiles").Should().Be(0);
+        }
+
+        private static IEnumerable<string> GetDefaultExcludePatterns(string group)
+        {
+            return group == "copyToOutput" ? ProjectFilesCollection.DefaultPublishExcludePatterns
+                                       : ProjectFilesCollection.DefaultBuiltInExcludePatterns;
+        }
+
+        private static IEnumerable<string> GetDefaultIncludePatterns(string group)
+        {
+            return group == "compile" ? ProjectFilesCollection.DefaultCompileBuiltInPatterns
+                                       : group == "embed" ? ProjectFilesCollection.DefaultResourcesBuiltInPatterns
+                                       : Enumerable.Empty<string>();
+        }
+
+        private static void VerifyContentMetadata(ProjectItemElement item)
+        {
+            if (item.ItemType == "Content")
+            {
+                item.Metadata.Count(m => m.Name == "CopyToOutputDirectory").Should().Be(1);
+            }
+        }
+
+        private void WriteExtraFiles(string directory)
+        {
+            Directory.CreateDirectory(Path.Combine(directory, "root"));
+            Directory.CreateDirectory(Path.Combine(directory, "src"));
+            File.WriteAllText(Path.Combine(directory, "root", "file1.txt"), "content");
+            File.WriteAllText(Path.Combine(directory, "root", "file2.txt"), "content");
+            File.WriteAllText(Path.Combine(directory, "root", "file3.txt"), "content");
+            File.WriteAllText(Path.Combine(directory, "src", "file1.cs"), "content");
+            File.WriteAllText(Path.Combine(directory, "src", "file2.cs"), "content");
+            File.WriteAllText(Path.Combine(directory, "src", "file3.cs"), "content");
+            File.WriteAllText(Path.Combine(directory, "rootfile.cs"), "content");
         }
 
         private ProjectRootElement RunBuildOptionsRuleOnPj(string s, string testDirectory = null)

@@ -2,12 +2,17 @@ using Microsoft.DotNet.PlatformAbstractions;
 
 namespace Microsoft.DotNet.Cli.Utils
 {
-    public class DefaultCommandResolverPolicy
+    public class DefaultCommandResolverPolicy : ICommandResolverPolicy
     {
+        public CompositeCommandResolver CreateCommandResolver()
+        {
+            return Create();
+        }
+
         public static CompositeCommandResolver Create()
         {
             var environment = new EnvironmentProvider();
-            var packagedCommandSpecFactory = new PackagedCommandSpecFactory();
+            var packagedCommandSpecFactory = new PackagedCommandSpecFactoryWithCliRuntime();
             var publishedPathCommandSpecFactory = new PublishPathCommandSpecFactory();
 
             var platformCommandSpecFactory = default(IPlatformCommandSpecFactory);
@@ -37,14 +42,15 @@ namespace Microsoft.DotNet.Cli.Utils
 
             compositeCommandResolver.AddCommandResolver(new MuxerCommandResolver());
             compositeCommandResolver.AddCommandResolver(new RootedCommandResolver());
-            compositeCommandResolver.AddCommandResolver(new ProjectToolsCommandResolver(packagedCommandSpecFactory));
+            compositeCommandResolver.AddCommandResolver(
+                new ProjectToolsCommandResolver(packagedCommandSpecFactory, environment));
             compositeCommandResolver.AddCommandResolver(new AppBaseDllCommandResolver());
             compositeCommandResolver.AddCommandResolver(
                 new AppBaseCommandResolver(environment, platformCommandSpecFactory));
             compositeCommandResolver.AddCommandResolver(
                 new PathCommandResolver(environment, platformCommandSpecFactory));
             compositeCommandResolver.AddCommandResolver(
-                new PublishedPathCommandResolver(environment, publishedPathCommandSpecFactory));            
+                new PublishedPathCommandResolver(environment, publishedPathCommandSpecFactory));
 
             return compositeCommandResolver;
         }

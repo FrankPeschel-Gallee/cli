@@ -1,32 +1,30 @@
 // Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
-using Microsoft.Build.Evaluation;
-using Microsoft.Build.Construction;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.Cli;
-using System.Linq;
-using System.IO;
 using Microsoft.DotNet.ProjectJsonMigration.Rules;
-using Newtonsoft.Json;
 
 namespace Microsoft.DotNet.ProjectJsonMigration
 {
-    public class DefaultMigrationRuleSet : IMigrationRule
+    internal class DefaultMigrationRuleSet : IMigrationRule
     {
         private IMigrationRule[] Rules => new IMigrationRule[]
         {
+            new AddDefaultsToProjectRule(),
             new MigrateRootOptionsRule(),
             new MigrateTFMRule(),
             new MigrateBuildOptionsRule(),
+            new MigrateJsonPropertiesRule(),
+            new MigratePackOptionsRule(),
             new MigrateRuntimeOptionsRule(),
+            new MigrateRuntimesRule(),
             new MigratePublishOptionsRule(),
             new MigrateProjectDependenciesRule(),
+            new MigratePackageDependenciesAndToolsRule(),
             new MigrateConfigurationsRule(),
             new MigrateScriptsRule(),
-            new TemporaryMutateProjectJsonRule(),
+            new MigrateAssemblyInfoRule(),
+            new RemoveDefaultsFromProjectRule(),
+            new CleanOutputProjectRule(),
             new SaveOutputProjectRule()
         };
 

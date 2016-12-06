@@ -28,6 +28,7 @@ namespace Microsoft.DotNet.Tests
                 .WithWorkingDirectory(testDirectory.Path);
             command.Environment["NUGET_PACKAGES"] = testNugetCache;
             command.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "";
+            command.Environment["SkipInvalidConfigurations"] = "true";
 
             _firstDotnetNonVerbUseCommandResult = command.ExecuteWithCapturedOutput("--info");
             _firstDotnetVerbUseCommandResult = command.ExecuteWithCapturedOutput("new");
@@ -56,7 +57,7 @@ namespace Microsoft.DotNet.Tests
         [Fact]
         public void It_shows_the_appropriate_message_to_the_user()
         {
-            const string firstTimeUseWelcomeMessage = @"Welcome to .NET Core!
+            string firstTimeUseWelcomeMessage = NormalizeLineEndings(@"Welcome to .NET Core!
 ---------------------
 Learn more about .NET Core @ https://aka.ms/dotnet-docs. Use dotnet --help to see available commands or go to https://aka.ms/dotnet-cli-docs.
 Telemetry
@@ -66,11 +67,12 @@ You can opt out of telemetry by setting a DOTNET_CLI_TELEMETRY_OPTOUT environmen
 You can read more about .NET Core tools telemetry @ https://aka.ms/dotnet-cli-telemetry.
 Configuring...
 -------------------
-A command is running to initially populate your local package cache, to improve restore speed and enable offline access. This command will take up to a minute to complete and will only happen once.";
+A command is running to initially populate your local package cache, to improve restore speed and enable offline access. This command will take up to a minute to complete and will only happen once.");
 
-            _firstDotnetVerbUseCommandResult.StdOut
-                .Should()
-                .StartWith(firstTimeUseWelcomeMessage);
+            // normalizing line endings as git is occasionally replacing line endings in this file causing this test to fail
+            NormalizeLineEndings(_firstDotnetVerbUseCommandResult.StdOut)
+                .Should().StartWith(firstTimeUseWelcomeMessage)
+                     .And.NotContain("Restore completed in");
         }
 
     	[Fact]
@@ -94,5 +96,10 @@ A command is running to initially populate your local package cache, to improve 
     		return new DotnetCommand().ExecuteWithCapturedOutput("--version").StdOut
     			.TrimEnd(Environment.NewLine.ToCharArray());
     	}
+
+        private static string NormalizeLineEndings(string s)
+        {
+            return s.Replace("\r\n", "\n").Replace("\r", "\n");
+        }
     }
 }

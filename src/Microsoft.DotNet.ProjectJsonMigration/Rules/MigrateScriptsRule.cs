@@ -7,15 +7,12 @@ using System.Linq;
 using Microsoft.Build.Construction;
 using Microsoft.DotNet.Cli.Utils.CommandParsing;
 using Microsoft.DotNet.ProjectJsonMigration.Transforms;
-using Microsoft.DotNet.ProjectModel;
+using Microsoft.DotNet.Internal.ProjectModel;
 
 namespace Microsoft.DotNet.ProjectJsonMigration.Rules
 {
-    public class MigrateScriptsRule : IMigrationRule
+    internal class MigrateScriptsRule : IMigrationRule
     {
-        private static readonly string s_unixScriptExtension = ".sh";
-        private static readonly string s_windowsScriptExtension = ".cmd";
-
         private readonly ITransformApplicator _transformApplicator;
 
         public MigrateScriptsRule(ITransformApplicator transformApplicator = null)
@@ -41,79 +38,22 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
             string scriptSetName)
         {
             var target = CreateTarget(csproj, scriptSetName);
-            var count = 0;
             foreach (var scriptCommand in scriptCommands)
             {
-                var scriptExtensionPropertyName = AddScriptExtension(propertyGroup, scriptCommand, $"{scriptSetName}_{++count}");
-                AddExec(target, FormatScriptCommand(scriptCommand, scriptExtensionPropertyName));
+                if (CommandIsNotNeededInMSBuild(scriptCommand))
+                {
+                    continue;
+                }
+
+                AddExec(target, FormatScriptCommand(scriptCommand));
             }
 
             return target;
         }
 
-        private string AddScriptExtension(ProjectPropertyGroupElement propertyGroup, string scriptCommandline, string scriptId)
+        internal string FormatScriptCommand(string scriptCommandline)
         {
-            var scriptArguments = CommandGrammar.Process(
-                scriptCommandline,
-                (s) => null,
-                preserveSurroundingQuotes: false);
-
-            scriptArguments = scriptArguments.Where(argument => !string.IsNullOrEmpty(argument)).ToArray();
-            var scriptCommand = scriptArguments.First();
-            var propertyName = $"MigratedScriptExtension_{scriptId}";
-
-            var windowsScriptExtensionProperty = propertyGroup.AddProperty(propertyName,
-                s_windowsScriptExtension);
-            var unixScriptExtensionProperty = propertyGroup.AddProperty(propertyName,
-                s_unixScriptExtension);
-
-            windowsScriptExtensionProperty.Condition =
-                $" '$(OS)' == 'Windows_NT' and Exists('{scriptCommand}{s_windowsScriptExtension}') ";
-            unixScriptExtensionProperty.Condition =
-                $" '$(OS)' != 'Windows_NT' and Exists('{scriptCommand}{s_unixScriptExtension}') ";
-
-            return propertyName;
-        }
-
-        internal string FormatScriptCommand(string scriptCommandline, string scriptExtensionPropertyName)
-        {
-            var command = ReplaceScriptVariables(scriptCommandline);
-            command = AddScriptExtensionPropertyToCommandLine(command, scriptExtensionPropertyName);
-            return command;
-        }
-
-        internal string AddScriptExtensionPropertyToCommandLine(string scriptCommandline,
-            string scriptExtensionPropertyName)
-        {
-            var scriptArguments = CommandGrammar.Process(
-                scriptCommandline,
-                (s) => null,
-                preserveSurroundingQuotes: true);
-
-            scriptArguments = scriptArguments.Where(argument => !string.IsNullOrEmpty(argument)).ToArray();
-
-            var scriptCommand = scriptArguments.First();
-            var trimmedCommand = scriptCommand.Trim('\"').Trim('\'');
-
-            // Path.IsPathRooted only looks at paths conforming to the current os,
-            // we need to account for all things
-            if (!IsPathRootedForAnyOS(trimmedCommand))
-            {
-                scriptCommand = @".\" + scriptCommand;
-            }
-
-            if (scriptCommand.EndsWith("\"") || scriptCommand.EndsWith("'"))
-            {
-                var endChar = scriptCommand.Last();
-                scriptCommand = $"{scriptCommand.TrimEnd(endChar)}$({scriptExtensionPropertyName}){endChar}";
-            }
-            else
-            {
-                scriptCommand += $"$({scriptExtensionPropertyName})";
-            }
-
-            var command = string.Join(" ", new[] {scriptCommand}.Concat(scriptArguments.Skip(1)));
-            return command;
+            return ReplaceScriptVariables(scriptCommandline);
         }
 
         internal string ReplaceScriptVariables(string scriptCommandline)
@@ -144,6 +84,11 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
             return string.Join(" ", scriptArguments);
         }
 
+        private bool CommandIsNotNeededInMSBuild(string command)
+        {
+            return command.Contains("dotnet publish-iis");
+        }
+
         private bool IsPathRootedForAnyOS(string path)
         {
             return path.StartsWith("/") || path.Substring(1).StartsWith(":\\");
@@ -152,7 +97,14 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
         private ProjectTargetElement CreateTarget(ProjectRootElement csproj, string scriptSetName)
         {
             var targetName = $"{scriptSetName[0].ToString().ToUpper()}{string.Concat(scriptSetName.Skip(1))}Script";
-            var targetHookInfo = ScriptSetToMSBuildHookTargetMap[scriptSetName];
+
+            TargetHookInfo targetHookInfo;
+            if(!ScriptSetToMSBuildHookTargetMap.TryGetValue(scriptSetName, out targetHookInfo))
+            {
+                MigrationErrorCodes.MIGRATE1019(
+                        $"{scriptSetName} is an unsupported script event hook for project migration")
+                    .Throw();
+            }
 
             var target = csproj.CreateTargetElement(targetName);
             csproj.InsertBeforeChild(target, csproj.LastChild);
@@ -164,6 +116,9 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
             {
                 target.AfterTargets = targetHookInfo.TargetName;
             }
+
+            // Run Scripts After each inner build
+            target.Condition = " '$(IsCrossTargetingBuild)' != 'true' ";
 
             return target;
         }
@@ -177,21 +132,21 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
         // ProjectJson Script Set Name to 
         private static Dictionary<string, TargetHookInfo> ScriptSetToMSBuildHookTargetMap => new Dictionary<string, TargetHookInfo>()
         {
-            { "precompile",  new TargetHookInfo(true, "Build") },
+            { "precompile",  new TargetHookInfo(true, "BeforeBuild") },
             { "postcompile", new TargetHookInfo(false, "Build") },
-            { "prepublish",  new TargetHookInfo(true, "Publish") },
+            { "prepublish",  new TargetHookInfo(true, "PrepareForPublish") },
             { "postpublish", new TargetHookInfo(false, "Publish") }
         };
 
         private static Dictionary<string, string> ScriptVariableToMSBuildMap => new Dictionary<string, string>
         {
-            { "compile:TargetFramework", null },  // TODO: Need Short framework name in CSProj
             { "compile:ResponseFile", null },     // Not migrated
             { "compile:CompilerExitCode", null }, // Not migrated
             { "compile:RuntimeOutputDir", null }, // Not migrated
             { "compile:RuntimeIdentifier", null },// Not Migrated
             
-            { "publish:TargetFramework", null },  // TODO: Need Short framework name in CSProj
+            { "compile:TargetFramework", "$(TargetFramework)" },
+            { "publish:TargetFramework", "$(TargetFramework)" },
             { "publish:Runtime", "$(RuntimeIdentifier)" },
 
             { "compile:FullTargetFramework", "$(TargetFrameworkIdentifier),Version=$(TargetFrameworkVersion)" },

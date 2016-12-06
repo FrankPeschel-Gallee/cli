@@ -2,9 +2,8 @@
 using System.IO;
 using System.Linq;
 using Microsoft.Build.Construction;
-using Microsoft.DotNet.Migration.Tests;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.ProjectModel.Files;
+using Microsoft.DotNet.Internal.ProjectModel;
+using Microsoft.DotNet.Internal.ProjectModel.Files;
 using Microsoft.DotNet.TestFramework;
 using Microsoft.DotNet.Tools.Test.Utilities;
 using NuGet.Frameworks;
@@ -79,10 +78,6 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
                     }
                 }",
                 testDirectory: testDirectory);
-
-            Console.WriteLine(string.Join(";", mockProj.Items.Select(i => " ;; " + i.ItemType)));
-            Console.WriteLine(string.Join(";", mockProj.Items.Select(i => " ;; " + i.Include)));
-            Console.WriteLine(string.Join(";", mockProj.Items.Select(i => " ;; " + i.Exclude)));
 
             mockProj.Items.Count(i => i.ItemType.Equals("Content", StringComparison.Ordinal)).Should().Be(3);
 

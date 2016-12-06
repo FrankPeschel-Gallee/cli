@@ -1,18 +1,18 @@
 ﻿using System.Collections.Generic;
 using Microsoft.Build.Construction;
 using Microsoft.DotNet.ProjectJsonMigration.Rules;
-using Microsoft.DotNet.ProjectModel;
+using Microsoft.DotNet.Internal.ProjectModel;
 using NuGet.Frameworks;
 
 namespace Microsoft.DotNet.ProjectJsonMigration.Tests
 {
-    public class TemporaryProjectFileRuleRunner
+    internal class TemporaryProjectFileRuleRunner
     {
         public static ProjectRootElement RunRules(IEnumerable<IMigrationRule> rules, string projectJson,
-            string testDirectory)
+            string testDirectory, ProjectRootElement xproj=null)
         {
             var projectContext = GenerateProjectContextFromString(testDirectory, projectJson);
-            return RunMigrationRulesOnGeneratedProject(rules, projectContext, testDirectory);
+            return RunMigrationRulesOnGeneratedProject(rules, projectContext, testDirectory, xproj);
         }
 
         private static ProjectContext GenerateProjectContextFromString(string projectDirectory, string json)
@@ -25,13 +25,14 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         }
 
         private static ProjectRootElement RunMigrationRulesOnGeneratedProject(IEnumerable<IMigrationRule> rules,
-            ProjectContext projectContext, string testDirectory)
+            ProjectContext projectContext, string testDirectory, ProjectRootElement xproj)
         {
             var project = ProjectRootElement.Create();
-            var testSettings = new MigrationSettings(testDirectory, testDirectory, "1.0.0", project);
+            var testSettings = new MigrationSettings(testDirectory, testDirectory, project);
             var testInputs = new MigrationRuleInputs(new[] {projectContext}, project,
                 project.AddItemGroup(),
-                project.AddPropertyGroup());
+                project.AddPropertyGroup(),
+                xproj);
 
             foreach (var rule in rules)
             {

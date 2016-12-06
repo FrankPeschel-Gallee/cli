@@ -1,11 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.DotNet.InternalAbstractions;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.ProjectModel.Graph;
+using Microsoft.DotNet.Tools.Common;
 using NuGet.Frameworks;
+using NuGet.ProjectModel;
 
 namespace Microsoft.DotNet.Cli.Utils
 {
@@ -37,11 +36,15 @@ namespace Microsoft.DotNet.Cli.Utils
 
         public CommandSpec Resolve(CommandResolverArguments commandResolverArguments)
         {
+            Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: attempting to resolve {commandResolverArguments.CommandName}");
+
             if (commandResolverArguments.Framework == null
                 || commandResolverArguments.ProjectDirectory == null
                 || commandResolverArguments.Configuration == null
                 || commandResolverArguments.CommandName == null)
             {
+                Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: invalid commandResolverArguments");
+
                 return null;
             }
 
@@ -66,52 +69,62 @@ namespace Microsoft.DotNet.Cli.Utils
         {
             var allowedExtensions = GetAllowedCommandExtensionsFromEnvironment(_environment);
 
-            var projectContext = GetProjectContextFromDirectory(
+            var projectFactory = new ProjectFactory(_environment);
+            var project = projectFactory.GetProject(
                 projectDirectory,
-                framework);
+                framework,
+                configuration,
+                buildBasePath,
+                outputPath);
 
-            if (projectContext == null)
+            if (project == null)
             {
+                Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: Didn't find a matching project {projectDirectory}.");
                 return null;
             }
 
-            var depsFilePath =
-                projectContext.GetOutputPaths(configuration, buildBasePath, outputPath).RuntimeFiles.DepsJson;
+            var depsFilePath = project.DepsJsonPath;
 
-            if (! File.Exists(depsFilePath))
+            if (!File.Exists(depsFilePath))
             {
                 Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: {depsFilePath} does not exist");
                 return null;
             }
 
-            var runtimeConfigPath =
-                projectContext.GetOutputPaths(configuration, buildBasePath, outputPath).RuntimeFiles.RuntimeConfigJson;
+            var runtimeConfigPath = project.RuntimeConfigJsonPath;
 
-            if (! File.Exists(runtimeConfigPath))
+            if (!File.Exists(runtimeConfigPath))
             {
                 Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: {runtimeConfigPath} does not exist");
                 return null;
             }
 
-            var toolLibrary = GetToolLibraryForContext(projectContext, commandName);
+            var lockFile = project.GetLockFile();
+            var toolLibrary = GetToolLibraryForContext(lockFile, commandName, framework);
+            var normalizedNugetPackagesRoot =
+                PathUtility.EnsureNoTrailingDirectorySeparator(lockFile.PackageFolders.First().Path);
 
-            return _packagedCommandSpecFactory.CreateCommandSpecFromLibrary(
+            var commandSpec = _packagedCommandSpecFactory.CreateCommandSpecFromLibrary(
                         toolLibrary,
                         commandName,
                         commandArguments,
                         allowedExtensions,
-                        projectContext.PackagesDirectory,
+                        normalizedNugetPackagesRoot,
                         s_commandResolutionStrategy,
                         depsFilePath,
                         runtimeConfigPath);
+
+            commandSpec?.AddEnvironmentVariablesFromProject(project);
+
+            return commandSpec;
         }
 
         private LockFileTargetLibrary GetToolLibraryForContext(
-            ProjectContext projectContext, string commandName)
+            LockFile lockFile, string commandName, NuGetFramework targetFramework)
         {
-            var toolLibraries = projectContext.LockFile.Targets
+            var toolLibraries = lockFile.Targets
                 .FirstOrDefault(t => t.TargetFramework.GetShortFolderName()
-                                      .Equals(projectContext.TargetFramework.GetShortFolderName()))
+                                      .Equals(targetFramework.GetShortFolderName()))
                 ?.Libraries.Where(l => l.Name == commandName ||
                     l.RuntimeAssemblies.Any(r => Path.GetFileNameWithoutExtension(r.Path) == commandName)).ToList();
 
@@ -120,28 +133,9 @@ namespace Microsoft.DotNet.Cli.Utils
                 throw new InvalidOperationException($"Ambiguous command name: {commandName}");
             }
 
+            Reporter.Verbose.WriteLine($"projectdependenciescommandresolver: tool library found {toolLibraries?.Count() > 0}");
+
             return toolLibraries?.FirstOrDefault();
-        }
-
-        private ProjectContext GetProjectContextFromDirectory(string directory, NuGetFramework framework)
-        {
-            if (directory == null || framework == null)
-            {
-                return null;
-            }
-
-            var projectRootPath = directory;
-
-            if (!File.Exists(Path.Combine(projectRootPath, Project.FileName)))
-            {
-                return null;
-            }
-
-            return ProjectContext.Create(
-                projectRootPath,
-                framework,
-                RuntimeEnvironmentRidExtensions.GetAllCandidateRuntimeIdentifiers());
-
         }
 
         private IEnumerable<string> GetAllowedCommandExtensionsFromEnvironment(IEnvironmentProvider environment)

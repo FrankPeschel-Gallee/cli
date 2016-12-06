@@ -47,6 +47,8 @@
 .PARAMETER AzureFeed
     Default: https://dotnetcli.azureedge.net/dotnet
     This parameter should not be usually changed by user. It allows to change URL for the Azure feed used by this installer.
+.PARAMETER ProxyAddress
+    If set, the installer will use the proxy when making web requests
 #>
 [cmdletbinding()]
 param(
@@ -59,7 +61,8 @@ param(
    [switch]$DryRun,
    [switch]$NoPath,
    [string]$AzureFeed="https://dotnetcli.azureedge.net/dotnet",
-   [string]$UncachedFeed="https://dotnetcli.blob.core.windows.net/dotnet"
+   [string]$UncachedFeed="https://dotnetcli.blob.core.windows.net/dotnet",
+   [string]$ProxyAddress
 )
 
 Set-StrictMode -Version Latest
@@ -133,7 +136,17 @@ function GetHTTPResponse([Uri] $Uri)
     try {
         # HttpClient is used vs Invoke-WebRequest in order to support Nano Server which doesn't support the Invoke-WebRequest cmdlet.
         Load-Assembly -Assembly System.Net.Http
-        $HttpClient = New-Object System.Net.Http.HttpClient
+        if($ProxyAddress){
+            $HttpClientHandler = New-Object System.Net.Http.HttpClientHandler
+            $HttpClientHandler.Proxy =  New-Object System.Net.WebProxy -Property @{Address=$ProxyAddress}
+            $HttpClient = New-Object System.Net.Http.HttpClient -ArgumentList $HttpClientHandler
+        } 
+        else {
+            $HttpClient = New-Object System.Net.Http.HttpClient
+        }
+        # Default timeout for HttpClient is 100s.  For a 50 MB download this assumes 500 KB/s average, any less will time out
+        # 5 minutes allows it to work over much slower connections.
+        $HttpClient.Timeout = New-TimeSpan -Minutes 5 
         $Response = $HttpClient.GetAsync($Uri).Result
         if (($Response -eq $null) -or (-not ($Response.IsSuccessStatusCode)))
         {
@@ -366,6 +379,17 @@ function DownloadFile([Uri]$Uri, [string]$OutPath) {
     }
 }
 
+function Prepend-Sdk-InstallRoot-To-Path([string]$InstallRoot, [string]$BinFolderRelativePath) {
+    $BinPath = Get-Absolute-Path $(Join-Path -Path $InstallRoot -ChildPath $BinFolderRelativePath)
+    if (-Not $NoPath) {
+        Say "Adding to current process PATH: `"$BinPath`". Note: This change will not be visible if PowerShell was run as a child process."
+        $env:path = "$BinPath;" + $env:path
+    }
+    else {
+        Say "Binaries of dotnet can be found in $BinPath"
+    }
+}
+
 $AzureChannel = Get-Azure-Channel-From-Channel -Channel $Channel
 $CLIArchitecture = Get-CLIArchitecture-From-Architecture $Architecture
 $SpecificVersion = Get-Specific-Version-From-Version -AzureFeed $AzureFeed -AzureChannel $AzureChannel -CLIArchitecture $CLIArchitecture -Version $Version
@@ -387,10 +411,17 @@ $IsSdkInstalled = Is-Dotnet-Package-Installed -InstallRoot $InstallRoot -Relativ
 Say-Verbose ".NET SDK installed? $IsSdkInstalled"
 if ($IsSdkInstalled) {
     Say ".NET SDK version $SpecificVersion is already installed."
+    Prepend-Sdk-InstallRoot-To-Path -InstallRoot $InstallRoot -BinFolderRelativePath $BinFolderRelativePath
     exit 0
 }
 
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+
+$free = Get-CimInstance -Class win32_logicaldisk | where Deviceid -eq "$((Get-Item $InstallRoot).PSDrive.Name):"
+if ($free.Freespace / 1MB -le 250 ) {
+    Say "there is not enough disk space on drive c:"
+    exit 0
+}
 
 foreach ($DownloadLink in $DownloadLinks) {
     $ZipPath = [System.IO.Path]::GetTempFileName()
@@ -403,14 +434,7 @@ foreach ($DownloadLink in $DownloadLinks) {
     Remove-Item $ZipPath
 }
 
-$BinPath = Get-Absolute-Path $(Join-Path -Path $InstallRoot -ChildPath $BinFolderRelativePath)
-if (-Not $NoPath) {
-    Say "Adding to current process PATH: `"$BinPath`". Note: This change will not be visible if PowerShell was run as a child process."
-    $env:path = "$BinPath;" + $env:path
-}
-else {
-    Say "Binaries of dotnet can be found in $BinPath"
-}
+Prepend-Sdk-InstallRoot-To-Path -InstallRoot $InstallRoot -BinFolderRelativePath $BinFolderRelativePath
 
 Say "Installation finished"
 exit 0

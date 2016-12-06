@@ -2,17 +2,24 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.IO;
+using Microsoft.Build.Construction;
 
 namespace Microsoft.DotNet.ProjectJsonMigration.Rules
 {
-    public class SaveOutputProjectRule : IMigrationRule
+    internal class SaveOutputProjectRule : IMigrationRule
     {
+        private static string GetContainingFolderName(string projectDirectory)
+        {
+            projectDirectory = projectDirectory.TrimEnd(new char[] { '/', '\\' });
+            return Path.GetFileName(projectDirectory);
+        }
+
         public void Apply(MigrationSettings migrationSettings, MigrationRuleInputs migrationRuleInputs)
         {
-            var outputName = Path.GetFileNameWithoutExtension(
-                migrationRuleInputs.DefaultProjectContext.GetOutputPaths("_").CompilationFiles.Assembly);
+            var outputName = migrationRuleInputs.DefaultProjectContext.GetProjectName();
 
-            var outputProject = Path.Combine(migrationSettings.OutputDirectory, outputName + ".csproj");
+            string csprojName = $"{GetContainingFolderName(migrationSettings.ProjectDirectory)}.csproj";
+            var outputProject = Path.Combine(migrationSettings.OutputDirectory, csprojName);
 
             migrationRuleInputs.OutputMSBuildProject.Save(outputProject);
         }

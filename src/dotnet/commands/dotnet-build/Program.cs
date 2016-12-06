@@ -1,113 +1,100 @@
 ﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.DotNet.Cli.CommandLine;
 using Microsoft.DotNet.Cli.Utils;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.Tools.Compiler;
-using NuGet.Frameworks;
+using Microsoft.DotNet.Tools.MSBuild;
 
 namespace Microsoft.DotNet.Tools.Build
 {
     public class BuildCommand
     {
-        public static int Run(string[] args) => Run(args, null);
-
-        public static int Run(string[] args, BuildWorkspace workspace)
+        public static int Run(string[] args)
         {
             DebugHelper.HandleDebugSwitch(ref args);
 
-            try
-            {
-                var app = new BuildCommandApp(
-                    "dotnet build",
-                    ".NET Builder",
-                    "Builder for the .NET Platform. It performs incremental compilation if it's safe to do so. Otherwise it delegates to dotnet-compile which performs non-incremental compilation",
-                    workspace);
-                return app.Execute(OnExecute, args);
-            }
-            catch (Exception ex)
-            {
-#if DEBUG
-                Console.Error.WriteLine(ex);
-#else
-                Console.Error.WriteLine(ex.Message);
-#endif
-                return 1;
-            }
-        }
+            CommandLineApplication app = new CommandLineApplication(throwOnUnexpectedArg: false);
+            app.Name = "dotnet build";
+            app.FullName = LocalizableStrings.AppFullName;
+            app.Description = LocalizableStrings.AppDescription;
+            app.AllowArgumentSeparator = true;
+            app.ArgumentSeparatorHelpText = HelpMessageStrings.MSBuildAdditionalArgsHelpText;
+            app.HelpOption("-h|--help");
 
-        private static bool OnExecute(IEnumerable<string> files, IEnumerable<NuGetFramework> frameworks, BuildCommandApp args)
-        {
-            var builderCommandApp = args;
-            var graphCollector = new ProjectGraphCollector(
-                !builderCommandApp.ShouldSkipDependencies,
-                (project, target) => args.Workspace.GetProjectContext(project, target));
+            CommandArgument projectArgument = app.Argument($"<{LocalizableStrings.ProjectArgumentValueName}>", LocalizableStrings.ProjectArgumentDescription);
 
-            IEnumerable<ProjectContext> contexts;
-            using (PerfTrace.Current.CaptureTiming(string.Empty, nameof(ResolveRootContexts)))
+            CommandOption outputOption = app.Option($"-o|--output <{LocalizableStrings.OutputOptionName}>", LocalizableStrings.OutputOptionDescription, CommandOptionType.SingleValue);
+            CommandOption frameworkOption = app.Option($"-f|--framework <{LocalizableStrings.FrameworkOptionName}>", LocalizableStrings.FrameworkOptionDescription, CommandOptionType.SingleValue);
+            CommandOption runtimeOption = app.Option(
+                $"-r|--runtime <{LocalizableStrings.RuntimeOptionName}>", LocalizableStrings.RuntimeOptionDescription,
+                CommandOptionType.SingleValue);
+            CommandOption configurationOption = app.Option($"-c|--configuration <{LocalizableStrings.ConfigurationOptionName}>", LocalizableStrings.FrameworkOptionDescription, CommandOptionType.SingleValue);
+            CommandOption versionSuffixOption = app.Option($"--version-suffix <{LocalizableStrings.VersionSuffixOptionName}>", LocalizableStrings.VersionSuffixOptionDescription, CommandOptionType.SingleValue);
+
+            CommandOption noIncrementalOption = app.Option("--no-incremental", LocalizableStrings.NoIncrementialOptionDescription, CommandOptionType.NoValue);
+            CommandOption noDependenciesOption = app.Option("--no-dependencies", LocalizableStrings.NoDependenciesOptionDescription, CommandOptionType.NoValue);
+            CommandOption verbosityOption = MSBuildForwardingApp.AddVerbosityOption(app);
+
+            app.OnExecute(() =>
             {
-                contexts = ResolveRootContexts(files, frameworks, args);
-            }
+                List<string> msbuildArgs = new List<string>();
 
-            ProjectGraphNode[] graph;
-            using (PerfTrace.Current.CaptureTiming(string.Empty, "Collect graph"))
-            {
-                graph = graphCollector.Collect(contexts).ToArray();
-            }
-            var builder = new DotNetProjectBuilder(builderCommandApp);
-            return builder.Build(graph).ToArray().All(r => r != CompilationResult.Failure);
-        }
-
-        private static IEnumerable<ProjectContext> ResolveRootContexts(
-            IEnumerable<string> files,
-            IEnumerable<NuGetFramework> frameworks,
-            BuildCommandApp args)
-        {
-            List<Task<ProjectContext>> tasks = new List<Task<ProjectContext>>();
-
-            foreach (var file in files)
-            {
-                Project project;
-                using (PerfTrace.Current.CaptureTiming(file, "Loading project.json"))
+                if (!string.IsNullOrEmpty(projectArgument.Value))
                 {
-                    project = args.Workspace.GetProject(file);
+                    msbuildArgs.Add(projectArgument.Value);
                 }
-                var projectFrameworks = project.GetTargetFrameworks().Select(f => f.FrameworkName);
-                if (!projectFrameworks.Any())
-                {
-                    throw new InvalidOperationException(
-                        $"Project '{file}' does not have any frameworks listed in the 'frameworks' section.");
-                }
-                IEnumerable<NuGetFramework> selectedFrameworks;
-                if (frameworks != null)
-                {
-                    var unsupportedByProject = frameworks.Where(f => !projectFrameworks.Contains(f));
-                    if (unsupportedByProject.Any())
-                    {
-                        throw new InvalidOperationException(
-                            $"Project \'{file}\' does not support framework: {string.Join(", ", unsupportedByProject.Select(fx => fx.DotNetFrameworkName))}.");
-                    }
 
-                    selectedFrameworks = frameworks;
+                if (noIncrementalOption.HasValue())
+                {
+                    msbuildArgs.Add("/t:Rebuild");
                 }
                 else
                 {
-                    selectedFrameworks = projectFrameworks;
+                    msbuildArgs.Add("/t:Build");
                 }
 
-                foreach (var framework in selectedFrameworks)
+                if (outputOption.HasValue())
                 {
-                    tasks.Add(Task.Run(() => args.Workspace.GetProjectContext(file, framework)));
+                    msbuildArgs.Add($"/p:OutputPath={outputOption.Value()}");
                 }
-            }
-            using (PerfTrace.Current.CaptureTiming(string.Empty, "Waiting for project contexts to finish loading"))
-            {
-                return Task.WhenAll(tasks).GetAwaiter().GetResult();
-            }
+
+                if (frameworkOption.HasValue())
+                {
+                    msbuildArgs.Add($"/p:TargetFramework={frameworkOption.Value()}");
+                }
+
+                if (runtimeOption.HasValue())
+                {
+                    msbuildArgs.Add($"/p:RuntimeIdentifier={runtimeOption.Value()}");
+                }
+
+                if (configurationOption.HasValue())
+                {
+                    msbuildArgs.Add($"/p:Configuration={configurationOption.Value()}");
+                }
+
+                if (versionSuffixOption.HasValue())
+                {
+                    msbuildArgs.Add($"/p:VersionSuffix={versionSuffixOption.Value()}");
+                }
+
+                if (noDependenciesOption.HasValue())
+                {
+                    msbuildArgs.Add("/p:BuildProjectReferences=false");
+                }
+
+                if (verbosityOption.HasValue())
+                {
+                    msbuildArgs.Add($"/verbosity:{verbosityOption.Value()}");
+                }
+
+                msbuildArgs.AddRange(app.RemainingArguments);
+
+                return new MSBuildForwardingApp(msbuildArgs).Execute();
+            });
+
+            return app.Execute(args);
         }
     }
 }

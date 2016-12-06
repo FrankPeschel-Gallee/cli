@@ -12,20 +12,26 @@ namespace Microsoft.DotNet.Cli.Build
 
         protected override string Args
         {
-            get { return $"{GetVerbosity()} {GetFallbackSource()} {GetPackages()}"; }
+            get { return $"{GetProjectPath()} {GetSource()} {GetPackages()} {GetSkipInvalidConfigurations()} {GetRuntime()} {GetAdditionalParameters()}"; }
         }
 
-        public string FallbackSource { get; set; }
+        public string AdditionalParameters { get; set; }
+
+        public string ProjectPath { get; set; }
+
+        public string Source { get; set; }
 
         public string Packages { get; set; }
 
-        public string Verbosity { get; set; }
+        public bool SkipInvalidConfigurations { get; set; }
+        
+        public string Runtime { get; set; }
 
-        private string GetFallbackSource()
+        private string GetSource()
         {
-            if (!string.IsNullOrEmpty(FallbackSource))
+            if (!string.IsNullOrEmpty(Source))
             {
-                return $"--fallbacksource {FallbackSource}";
+                return $"--source {Source}";
             }
 
             return null;
@@ -41,14 +47,39 @@ namespace Microsoft.DotNet.Cli.Build
             return null;
         }
 
-        private string GetVerbosity()
+        private string GetProjectPath()
         {
-            if (!string.IsNullOrEmpty(Verbosity))
+            if (!string.IsNullOrEmpty(ProjectPath))
             {
-                return $"--verbosity {Verbosity}";
+                return $"{ProjectPath}";
             }
 
             return null;
+        }
+
+        private string GetSkipInvalidConfigurations()
+        {
+            if (SkipInvalidConfigurations)
+            {
+                return "/p:SkipInvalidConfigurations=true";
+            }
+
+            return null;
+        }
+        
+        private string GetRuntime()
+        {
+            if (!string.IsNullOrEmpty(Runtime))
+            {
+                return $"/p:RuntimeIdentifier={Runtime}";
+            }
+
+            return null;
+        }
+
+        private string GetAdditionalParameters()
+        {
+            return AdditionalParameters;
         }
     }
 }

@@ -9,7 +9,7 @@ using Microsoft.DotNet.ProjectJsonMigration;
 using System;
 using System.IO;
 using Microsoft.Build.Construction;
-using Microsoft.DotNet.ProjectModel;
+using Microsoft.DotNet.Internal.ProjectModel;
 using NuGet.Frameworks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -25,7 +25,7 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         [Fact]
         public void RuntimeOptions_are_copied_from_projectJson_to_runtimeconfig_template_json_file()
         {
-            var testInstance = TestAssetsManager.CreateTestInstance("TestAppWithRuntimeOptions").WithLockFiles();
+            var testInstance = TestAssetsManager.CreateTestInstance("TestAppWithRuntimeOptions");
             var projectDir = testInstance.Path;
             var projectPath = Path.Combine(testInstance.Path, "project.json");
 
@@ -34,14 +34,13 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
 
             var projectContext = ProjectContext.Create(projectDir, FrameworkConstants.CommonFrameworks.NetCoreApp10);
 
-            var testSettings = new MigrationSettings(projectDir, projectDir, "1.0.0", default(ProjectRootElement));
+            var testSettings = new MigrationSettings(projectDir, projectDir, default(ProjectRootElement));
             var testInputs = new MigrationRuleInputs(new[] { projectContext }, null, null, null);
             new MigrateRuntimeOptionsRule().Apply(testSettings, testInputs);
 
             var migratedRuntimeOptionsPath = Path.Combine(projectDir, s_runtimeConfigFileName);
 
             File.Exists(migratedRuntimeOptionsPath).Should().BeTrue();
-            Console.WriteLine(migratedRuntimeOptionsPath);
 
             var migratedRuntimeOptionsContent = JObject.Parse(File.ReadAllText(migratedRuntimeOptionsPath));
             JToken.DeepEquals(rawRuntimeOptions, migratedRuntimeOptionsContent).Should().BeTrue();
@@ -50,12 +49,12 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Tests
         [Fact]
         public void Migrating_ProjectJson_with_no_RuntimeOptions_produces_no_runtimeconfig_template_json_file()
         {
-            var testInstance = TestAssetsManager.CreateTestInstance("TestAppSimple").WithLockFiles();
+            var testInstance = TestAssetsManager.CreateTestInstance("PJTestAppSimple");
             var projectDir = testInstance.Path;
 
             var projectContext = ProjectContext.Create(projectDir, FrameworkConstants.CommonFrameworks.NetCoreApp10);
 
-            var testSettings = new MigrationSettings(projectDir, projectDir, "1.0.0", default(ProjectRootElement));
+            var testSettings = new MigrationSettings(projectDir, projectDir, default(ProjectRootElement));
             var testInputs = new MigrationRuleInputs(new[] { projectContext }, null, null, null);
             new MigrateRuntimeOptionsRule().Apply(testSettings, testInputs);
 

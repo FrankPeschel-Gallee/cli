@@ -2,14 +2,21 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.DotNet.ProjectModel;
-using Microsoft.DotNet.ProjectModel.Graph;
+using Microsoft.DotNet.Tools.Common;
 using NuGet.Packaging;
+using NuGet.ProjectModel;
 
 namespace Microsoft.DotNet.Cli.Utils
 {
     public class PackagedCommandSpecFactory : IPackagedCommandSpecFactory
     {
+        private Action<string, IList<string>> _addAdditionalArguments;
+
+        internal PackagedCommandSpecFactory(Action<string, IList<string>> addAdditionalArguments = null)
+        {
+            _addAdditionalArguments = addAdditionalArguments;
+        }
+
         public CommandSpec CreateCommandSpecFromLibrary(
             LockFileTargetLibrary toolLibrary,
             string commandName,
@@ -20,12 +27,15 @@ namespace Microsoft.DotNet.Cli.Utils
             string depsFilePath,
             string runtimeConfigPath)
         {
+            Reporter.Verbose.WriteLine($"packagedcommandspecfactory: attempting to find command {commandName} in {toolLibrary.Name}");
 
             var toolAssembly = toolLibrary?.RuntimeAssemblies
                     .FirstOrDefault(r => Path.GetFileNameWithoutExtension(r.Path) == commandName);
 
             if (toolAssembly == null)
             {
+                Reporter.Verbose.WriteLine($"packagedcommandspecfactory: failed to find toolAssembly for {commandName}");
+
                 return null;
             }
             
@@ -33,6 +43,8 @@ namespace Microsoft.DotNet.Cli.Utils
 
             if (!File.Exists(commandPath))
             {
+                Reporter.Verbose.WriteLine($"packagedcommandspecfactory: failed to find commandPath {commandPath}");
+
                 return null;
             }
 
@@ -50,7 +62,7 @@ namespace Microsoft.DotNet.Cli.Utils
             var packageDirectory = new VersionFolderPathResolver(nugetPackagesRoot)
                 .GetInstallPath(toolLibrary.Name, toolLibrary.Version);
 
-            var filePath = Path.Combine(packageDirectory, runtimeAssembly.Path);
+            var filePath = Path.Combine(packageDirectory, PathUtility.GetPathWithDirectorySeparator(runtimeAssembly.Path));
 
             return filePath;
         }
@@ -114,6 +126,11 @@ namespace Microsoft.DotNet.Cli.Utils
 
             arguments.Add("--additionalprobingpath");
             arguments.Add(nugetPackagesRoot);
+
+            if(_addAdditionalArguments != null)
+            {
+                _addAdditionalArguments(commandPath, arguments);
+            }
 
             arguments.Add(commandPath);
             arguments.AddRange(commandArguments);

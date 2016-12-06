@@ -1,8 +1,11 @@
-﻿using System;
+﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+using System;
 
 namespace Microsoft.DotNet.ProjectJsonMigration
 {
-    public static partial class MigrationErrorCodes
+    internal static partial class MigrationErrorCodes
     {
         public static Func<string, MigrationError> MIGRATE1011
             => (message) => new MigrationError(nameof(MIGRATE1011), "Deprecated Project", message);
@@ -22,6 +25,15 @@ namespace Microsoft.DotNet.ProjectJsonMigration
         public static Func<string, MigrationError> MIGRATE1016
             => (message) => new MigrationError(nameof(MIGRATE1016), "Unsupported Script Variable", message);
 
+        public static Func<string, MigrationError> MIGRATE1017
+            => (message) => new MigrationError(nameof(MIGRATE1017), "Multiple Xproj Files", message);
+
+        public static Func<string, MigrationError> MIGRATE1018
+            => (message) => new MigrationError(nameof(MIGRATE1018), "Dependency Project not found", message);
+
+        public static Func<string, MigrationError> MIGRATE1019
+            => (message) => new MigrationError(nameof(MIGRATE1019), "Unsupported Script Event Hook", message);
+
         // Potentially Temporary (Point in Time) Errors
         public static Func<string, MigrationError> MIGRATE20011
             => (message) => new MigrationError(nameof(MIGRATE20011), "Multi-TFM", message);
@@ -31,5 +43,8 @@ namespace Microsoft.DotNet.ProjectJsonMigration
 
         public static Func<string, MigrationError> MIGRATE20013
             => (message) => new MigrationError(nameof(MIGRATE20013), "Non-Csharp App", message);
+
+        public static Func<string, MigrationError> MIGRATE20018
+            => (message) => new MigrationError(nameof(MIGRATE20018), "Files specified under PackOptions", message);
     }
 }

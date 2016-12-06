@@ -12,7 +12,7 @@ namespace Microsoft.DotNet.Cli.Build
 
         protected override string Args
         {
-            get { return $"{GetProjectPath()} {GetConfiguration()} {GetFramework()} {GetNativeSubdirectory()} {GetBuildBasePath()} {GetOutput()} {GetVersionSuffix()}"; }
+            get { return $"{GetProjectPath()} {GetConfiguration()} {GetFramework()} {GetNativeSubdirectory()} {GetBuildBasePath()} {GetOutput()} {GetVersionSuffix()} {GetRuntime()} {GetMSBuildArgs()}"; }
         }
 
         public string BuildBasePath { get; set; }
@@ -23,9 +23,13 @@ namespace Microsoft.DotNet.Cli.Build
 
         public bool NativeSubDirectory { get; set; }
 
+        public string MSBuildArgs { get; set; }
+
         public string Output { get; set; }
 
         public string ProjectPath { get; set; }
+
+        public string Runtime { get; set; }
 
         public string VersionSuffix { get; set; }
 
@@ -69,6 +73,16 @@ namespace Microsoft.DotNet.Cli.Build
             return null;
         }
 
+        private string GetMSBuildArgs()
+        {
+            if (!string.IsNullOrEmpty(MSBuildArgs))
+            {
+                return $"-- {MSBuildArgs}";
+            }
+
+            return null;
+        }
+
         private string GetOutput()
         {
             if (!string.IsNullOrEmpty(Output))
@@ -84,6 +98,16 @@ namespace Microsoft.DotNet.Cli.Build
             if (!string.IsNullOrEmpty(ProjectPath))
             {
                 return $"{ProjectPath}";
+            }
+
+            return null;
+        }
+
+        private string GetRuntime()
+        {
+            if (!string.IsNullOrEmpty(Runtime))
+            {
+                return $"--runtime {Runtime}";
             }
 
             return null;

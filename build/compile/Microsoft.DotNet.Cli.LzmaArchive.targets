@@ -1,9 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <Target Name="GetNuGetPackagesArchive"
+            DependsOnTargets="SetupNuGetPackagesArchiveInputsOutputs;
+                              DownloadNuGetPackagesArchive;
+                              GenerateNuGetPackagesArchive;
+                              UploadNuGetPackagesArchiveToAzure"
+            Inputs="$(IntermediateArchive)"
+            Outputs="$(FinalArchive)">
+      <Copy SourceFiles="$(IntermediateArchive)" DestinationFiles="$(FinalArchive)" />
+    </Target>
+
+    <Target Name="UploadNuGetPackagesArchiveToAzure"
+            DependsOnTargets="SetupNuGetPackagesArchiveInputsOutputs;
+                              SetupAzureBlobInformation;
+                              GenerateNuGetPackagesArchive"
+            Condition=" '$(UploadNuGetPackagesArchiveToAzure)' == 'true' And  '$(PUBLISH_TO_AZURE_BLOB)' != '' ">
+      <ItemGroup>
+        <NuGetPackagesArchiveToUpload Include="$(IntermediateArchive)" />
+      </ItemGroup>
+
+      <ItemGroup>
+        <NuGetPackagesArchiveToUpload>
+          <RelativeBlobPath>$(CoreSetupChannel)/Binaries/$(SharedFrameworkVersion)/$([System.String]::Copy('%(Filename)%(Extension)').Replace('\' ,'/'))</RelativeBlobPath>
+        </NuGetPackagesArchiveToUpload>
+      </ItemGroup>
+
+      <UploadToAzure
+        AccountKey="$(ArtifactCloudDropAccessToken)"
+        AccountName="$(ArtifactCloudDropAccountName)"
+        ContainerName="$(ArtifactContainerName)"
+        Items="@(NuGetPackagesArchiveToUpload)"
+        Overwrite="false"
+        ContinueOnError="WarnAndContinue" />
+    </Target>
+
+    <Target Name="DownloadNuGetPackagesArchive"
+            DependsOnTargets="SetupNuGetPackagesArchiveInputsOutputs"
+            Inputs="$(IntermediateArchive)"
+            Outputs="$(IntermediateArchive)">
+      <DownloadFile Uri="$(NugetPackagesArchiveBlobUrl)"
+                    DestinationPath="$(IntermediateArchive)"
+                    ContinueOnError="WarnAndContinue" />
+    </Target>
+
     <Target Name="GenerateNuGetPackagesArchive"
             DependsOnTargets="SetupNuGetPackagesArchiveInputsOutputs"
-            Inputs="@(GenerateNuGetPackagesArchiveInputs)"
-            Outputs="$(FinalArchive)">
+            Inputs="$(IntermediateArchive)"
+            Outputs="$(IntermediateArchive)">
+      <PropertyGroup>
+        <UploadNuGetPackagesArchiveToAzure>true</UploadNuGetPackagesArchiveToAzure>
+      </PropertyGroup>
+
       <ItemGroup>
         <FilesToClean Include="$(NuGetPackagesArchiveProject)/**/*" />
         <FilesToClean Include="$(NuGetPackagesArchiveFolder)/**/*" />
@@ -15,42 +62,34 @@
 
       <DotNetNew ToolPath="$(Stage2Directory)"
                  WorkingDirectory="$(NuGetPackagesArchiveProject)" />
+
       <DotNetRestore ToolPath="$(Stage2Directory)"
                      Packages="$(NuGetPackagesArchiveFolder)"
+                     SkipInvalidConfigurations="True"
                      WorkingDirectory="$(NuGetPackagesArchiveProject)" />
 
       <Delete Files="$(IntermediateArchive);$(IntermediateArchive).zip" />
 
       <Message Text="Publishing Archiver" />
 
-      <DotNetPublish ToolPath="$(Stage2Directory)"
+      <DotNetPublish ToolPath="$(Stage0Directory)"
                      WorkingDirectory="$(RepoRoot)/tools/Archiver"
                      Output="$(ToolsOutputDirectory)"
                      Configuration="$(Configuration)" />
 
-      <Exec Command="$(ArchiverExe) -a $(IntermediateArchive) $(NuGetPackagesArchiveFolder)" />
-
-      <Copy SourceFiles="$(IntermediateArchive)" DestinationFiles="$(FinalArchive)" />
+      <Exec Command="$(DotnetStage0) $(ArchiverDll) -a $(IntermediateArchive) $(NuGetPackagesArchiveFolder)" />
     </Target>
 
     <Target Name="SetupNuGetPackagesArchiveInputsOutputs"
             DependsOnTargets="Prepare;SetupStage">
       <PropertyGroup>
+        <NugetPackagesArchiveName>nuGetPackagesArchive.$(SharedFrameworkVersion).lzma</NugetPackagesArchiveName>
         <NuGetPackagesArchiveProject>$(IntermediateDirectory)/NuGetPackagesArchiveProject</NuGetPackagesArchiveProject>
         <NuGetPackagesArchiveFolder>$(IntermediateDirectory)/NuGetPackagesArchiveFolder</NuGetPackagesArchiveFolder>
-        <ArchiverExe>$(ToolsOutputDirectory)/Archiver</ArchiverExe>
-        <IntermediateArchive>$(IntermediateDirectory)/nuGetPackagesArchive.lzma</IntermediateArchive>
+        <ArchiverDll>$(ToolsOutputDirectory)/Archiver.dll</ArchiverDll>
+        <IntermediateArchive>$(IntermediateDirectory)/$(NugetPackagesArchiveName)</IntermediateArchive>
         <FinalArchive>$(Stage2Directory)/sdk/$(SdkVersion)/nuGetPackagesArchive.lzma</FinalArchive>
+        <NugetPackagesArchiveBlobUrl>$(SharedFrameworkArchiveBlobRootUrl)/$(NugetPackagesArchiveName)</NugetPackagesArchiveBlobUrl>
       </PropertyGroup>
-
-      <ItemGroup>
-        <GenerateNuGetPackagesArchiveInputs Include="$(_DotNetNewFolder)/CSharp_Console/**/*" />
-        <GenerateNuGetPackagesArchiveInputs Include="$(SrcDirectory)/dotnet-archive/**/*"
-                                            Exclude="$(SrcDirectory)/dotnet-archive/**/bin/**/*;
-                                                     $(SrcDirectory)/dotnet-archive/**/obj/**/*" />
-        <GenerateNuGetPackagesArchiveInputs Include="$(SrcDirectory)/Microsoft.DotNet.Archive/**/*"
-                                            Exclude="$(SrcDirectory)/Microsoft.DotNet.Archive/**/bin/**/*;
-                                                     $(SrcDirectory)/Microsoft.DotNet.Archive/**/obj/**/*" />
-      </ItemGroup>
     </Target>
 </Project>

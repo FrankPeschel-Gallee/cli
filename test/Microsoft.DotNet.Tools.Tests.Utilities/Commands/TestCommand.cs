@@ -1,11 +1,12 @@
-﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using Microsoft.DotNet.Cli.Utils;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -23,6 +24,10 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
 
         public Dictionary<string, string> Environment { get; } = new Dictionary<string, string>();
 
+        private List<Action<string>> _writeLines = new List<Action<string>>();
+
+        private List<string> _cliGeneratedEnvironmentVariables = new List<string> { "MSBuildSDKsPath" };
+
         public TestCommand(string command)
         {
             _command = command;
@@ -33,24 +38,20 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
 #endif 
         }
 
-        public TestCommand WithWorkingDirectory(string workingDirectory)
-        {
-            WorkingDirectory = workingDirectory;
-            return this;
-        }
-
         public virtual CommandResult Execute(string args = "")
         {
             var commandPath = _command;
             ResolveCommand(ref commandPath, ref args);
 
-            Console.WriteLine($"Executing - {commandPath} {args}");
+            Console.WriteLine($"Executing - {commandPath} {args} - {WorkingDirectoryInfo()}");
 
             var stdOut = new StreamForwarder();
             var stdErr = new StreamForwarder();
 
-            stdOut.ForwardTo(writeLine: Reporter.Output.WriteLine);
-            stdErr.ForwardTo(writeLine: Reporter.Output.WriteLine);
+            AddWriteLine(Reporter.Output.WriteLine);
+
+            stdOut.ForwardTo(writeLine: WriteLine);
+            stdErr.ForwardTo(writeLine: WriteLine);
 
             return RunProcess(commandPath, args, stdOut, stdErr);
         }
@@ -60,13 +61,15 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             var commandPath = _command;
             ResolveCommand(ref commandPath, ref args);
 
-            Console.WriteLine($"Executing - {commandPath} {args}");
+            Console.WriteLine($"Executing - {commandPath} {args} - {WorkingDirectoryInfo()}");
 
             var stdOut = new StreamForwarder();
             var stdErr = new StreamForwarder();
 
-            stdOut.ForwardTo(writeLine: Reporter.Output.WriteLine);
-            stdErr.ForwardTo(writeLine: Reporter.Output.WriteLine);
+            AddWriteLine(Reporter.Output.WriteLine);
+
+            stdOut.ForwardTo(writeLine: WriteLine);
+            stdErr.ForwardTo(writeLine: WriteLine);
 
             return RunProcessAsync(commandPath, args, stdOut, stdErr);
         }
@@ -78,10 +81,13 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             var commandPath = Env.GetCommandPath(command, ".exe", ".cmd", "") ??
                 Env.GetCommandPathFromRootPath(_baseDirectory, command, ".exe", ".cmd", "");
 
-            Console.WriteLine($"Executing (Captured Output) - {commandPath} {args}");
+            Console.WriteLine($"Executing (Captured Output) - {commandPath} {args} - {WorkingDirectoryInfo()}");
 
             var stdOut = new StreamForwarder();
             var stdErr = new StreamForwarder();
+
+            stdOut.ForwardTo(writeLine: WriteLine);
+            stdErr.ForwardTo(writeLine: WriteLine);
 
             stdOut.Capture();
             stdErr.Capture();
@@ -97,6 +103,11 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             }
 
             CurrentProcess.KillTree();
+        }
+
+        public void AddWriteLine(Action<string> writeLine)
+        {
+            _writeLines.Add(writeLine);
         }
 
         private void ResolveCommand(ref string executable, ref string args)
@@ -121,44 +132,152 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
 
         private CommandResult RunProcess(string executable, string args, StreamForwarder stdOut, StreamForwarder stdErr)
         {
-            CurrentProcess = StartProcess(executable, args);
-            var taskOut = stdOut.BeginRead(CurrentProcess.StandardOutput);
-            var taskErr = stdErr.BeginRead(CurrentProcess.StandardError);
+            Task taskOut = null;
+
+            Task taskErr = null;
+         
+            CurrentProcess = CreateProcess(executable, args);
+
+            CurrentProcess.Start();
+
+            try
+            {
+                taskOut = stdOut.BeginRead(CurrentProcess.StandardOutput);
+            }
+            catch (System.InvalidOperationException e)
+            {
+                if (!e.Message.Equals("The collection has been marked as complete with regards to additions."))
+                {
+                    throw;
+                }
+            }
+
+            try
+            {
+                taskErr = stdErr.BeginRead(CurrentProcess.StandardError);
+            }
+            catch (System.InvalidOperationException e)
+            {
+                if (!e.Message.Equals("The collection has been marked as complete with regards to additions."))
+                {
+                    throw;
+                }
+            }
 
             CurrentProcess.WaitForExit();
-            Task.WaitAll(taskOut, taskErr);
+
+            var tasksToAwait = new List<Task>();
+
+            if (taskOut != null)
+            {
+                tasksToAwait.Add(taskOut);
+            }
+
+            if (taskErr != null)
+            {
+                tasksToAwait.Add(taskErr);
+            }
+
+            if (tasksToAwait.Any())
+            {
+                try
+                {
+                    Task.WaitAll(tasksToAwait.ToArray());
+                }
+                catch (System.ObjectDisposedException e)
+                {
+                    taskErr = null;
+
+                    taskOut = null;
+                }
+            }
 
             var result = new CommandResult(
                 CurrentProcess.StartInfo,
                 CurrentProcess.ExitCode,
-                stdOut.CapturedOutput,
-                stdErr.CapturedOutput);
+                stdOut?.CapturedOutput ?? CurrentProcess.StandardOutput.ReadToEnd(),
+                stdErr?.CapturedOutput ?? CurrentProcess.StandardError.ReadToEnd());
 
             return result;
         }
 
         private Task<CommandResult> RunProcessAsync(string executable, string args, StreamForwarder stdOut, StreamForwarder stdErr)
         {
-            CurrentProcess = StartProcess(executable, args);
-            var taskOut = stdOut.BeginRead(CurrentProcess.StandardOutput);
-            var taskErr = stdErr.BeginRead(CurrentProcess.StandardError);
+            Task taskOut = null;
+
+            Task taskErr = null;
+         
+            CurrentProcess = CreateProcess(executable, args);
+
+            CurrentProcess.Start();
+
+            try
+            {
+                taskOut = stdOut.BeginRead(CurrentProcess.StandardOutput);
+            }
+            catch (System.InvalidOperationException e)
+            {
+                if (!e.Message.Equals("The collection has been marked as complete with regards to additions."))
+                {
+                    throw;
+                }
+            }
+
+            try
+            {
+                taskErr = stdErr.BeginRead(CurrentProcess.StandardError);
+            }
+            catch (System.InvalidOperationException e)
+            {
+                if (!e.Message.Equals("The collection has been marked as complete with regards to additions."))
+                {
+                    throw;
+                }
+            }
 
             var tcs = new TaskCompletionSource<CommandResult>();
+
             CurrentProcess.Exited += (sender, arg) =>
             {
-                Task.WaitAll(taskOut, taskErr);
+                var tasksToAwait = new List<Task>();
+
+                if (taskOut != null)
+                {
+                    tasksToAwait.Add(taskOut);
+                }
+
+                if (taskErr != null)
+                {
+                    tasksToAwait.Add(taskErr);
+                }
+
+                if (tasksToAwait.Any())
+                {
+                    try
+                    {
+                        Task.WaitAll(tasksToAwait.ToArray());
+                    }
+                    catch (System.ObjectDisposedException e)
+                    {
+                        taskErr = null;
+
+                        taskOut = null;
+                    }
+                }
+                
                 var result = new CommandResult(
                                     CurrentProcess.StartInfo,
                                     CurrentProcess.ExitCode,
-                                    stdOut.CapturedOutput,
-                                    stdErr.CapturedOutput);
+                                    stdOut?.CapturedOutput ?? CurrentProcess.StandardOutput.ReadToEnd(),
+                                    stdErr?.CapturedOutput ?? CurrentProcess.StandardError.ReadToEnd());
+
                 tcs.SetResult(result);
             };
 
             return tcs.Task;
         }
 
-        private Process StartProcess(string executable, string args)
+        private Process CreateProcess(string executable, string args)
         {
             var psi = new ProcessStartInfo
             {
@@ -169,6 +288,8 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
                 RedirectStandardInput = true,
                 UseShellExecute = false
             };
+
+            RemoveCliGeneratedEnvironmentVariables(psi);
 
             foreach (var item in Environment)
             {
@@ -190,15 +311,38 @@ namespace Microsoft.DotNet.Tools.Test.Utilities
             };
 
             process.EnableRaisingEvents = true;
-            process.Start();
+
             return process;
         }
-        
-        public TestCommand WithEnvironmentVariable(string name, string value)
+
+        private void WriteLine(string line)
         {
-            Environment.Add(name, value);
-            
-            return this;
+            foreach (var writeLine in _writeLines)
+            {
+                writeLine(line);
+            }
+        }
+
+        private string WorkingDirectoryInfo()
+        {
+            if (WorkingDirectory == null)
+            { 
+                return "";
+            }
+
+            return $" in pwd {WorkingDirectory}";
+        }
+
+        private void RemoveCliGeneratedEnvironmentVariables(ProcessStartInfo psi)
+        {
+            foreach (var name in _cliGeneratedEnvironmentVariables)
+            {
+#if NET451
+                psi.EnvironmentVariables.Remove(name);
+#else
+                psi.Environment.Remove(name);
+#endif
+            }
         }
     }
 }

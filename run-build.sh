@@ -6,6 +6,41 @@
 
 set -e
 
+machine_has() {
+    hash "$1" > /dev/null 2>&1
+    return $?
+}
+
+check_min_reqs() {
+    if ! machine_has "curl"; then
+        echo "run-build: Error: curl is required to download dotnet. Install curl to proceed." >&2
+        return 1
+    fi
+    return 0
+}
+
+# args:
+# remote_path - $1
+# [out_path] - $2 - stdout if not provided
+download() {
+    eval $invocation
+    
+    local remote_path=$1
+    local out_path=${2:-}
+
+    local failed=false
+    if [ -z "$out_path" ]; then
+        curl --retry 10 -sSL --create-dirs $remote_path || failed=true
+    else
+        curl --retry 10 -sSL --create-dirs -o $out_path $remote_path || failed=true
+    fi
+    
+    if [ "$failed" = true ]; then
+        echo "run-build: Error: Download failed" >&2
+        return 1
+    fi
+}
+
 SOURCE="${BASH_SOURCE[0]}"
 while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
   DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
@@ -14,7 +49,6 @@ while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 REPOROOT="$DIR"
-OLDPATH="$PATH"
 
 ARCHITECTURE="x64"
 source "$REPOROOT/scripts/common/_prettyprint.sh"
@@ -95,10 +129,42 @@ while read line; do
 done < "$REPOROOT/branchinfo.txt"
 
 # Use a repo-local install directory (but not the artifacts directory because that gets cleaned a lot
+[ -z "$DOTNET_INSTALL_DIR_PJ" ] && export DOTNET_INSTALL_DIR_PJ=$REPOROOT/.dotnet_stage0PJ/$ARCHITECTURE
+[ -d "$DOTNET_INSTALL_DIR_PJ" ] || mkdir -p $DOTNET_INSTALL_DIR_PJ
+
+# Also create an install directory for a post-PJnistic CLI 
 [ -z "$DOTNET_INSTALL_DIR" ] && export DOTNET_INSTALL_DIR=$REPOROOT/.dotnet_stage0/$ARCHITECTURE
 [ -d "$DOTNET_INSTALL_DIR" ] || mkdir -p $DOTNET_INSTALL_DIR
 
-$REPOROOT/init-tools.sh
+# During xplat bootstrapping, disable HTTP parallelism to avoid fatal restore timeouts.
+export __INIT_TOOLS_RESTORE_ARGS="$__INIT_TOOLS_RESTORE_ARGS --disable-parallel"
+
+DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+toolsLocalPath="$REPOROOT/build_tools"
+bootStrapperPath="$toolsLocalPath/bootstrap.sh"
+dotnetInstallPath="$toolsLocalPath/dotnet-install.sh"
+if [ ! -f $bootStrapperPath ]; then
+    if [ ! -d $toolsLocalPath ]; then
+        mkdir $toolsLocalPath
+    fi
+    download "https://raw.githubusercontent.com/dotnet/buildtools/master/bootstrap/bootstrap.sh" "$bootStrapperPath"
+    chmod u+x $bootStrapperPath
+fi
+
+$bootStrapperPath --repositoryRoot "$REPOROOT" --toolsLocalPath "$toolsLocalPath" --cliInstallPath $DOTNET_INSTALL_DIR_PJ --architecture $ARCHITECTURE > bootstrap.log
+
+if [ $? != 0 ]; then
+    echo "run-build: Error: Boot-strapping failed with exit code $?, see bootstrap.log for more information." >&2
+    exit $?
+fi
+
+# now execute the script
+echo "installing CLI: $dotnetInstallPath --version \"latest\" --install-dir $DOTNET_INSTALL_DIR --architecture \"$ARCHITECTURE\""
+$dotnetInstallPath --version "latest" --install-dir $DOTNET_INSTALL_DIR --architecture "$ARCHITECTURE"
+if [ $? != 0 ]; then
+    echo "run-build: Error: Boot-strapping post-PJ stage0 with exit code $?." >&2
+    exit $?
+fi
 
 # Put stage 0 on the PATH (for this shell only)
 PATH="$DOTNET_INSTALL_DIR:$PATH"
@@ -117,8 +183,8 @@ export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 echo "${args[@]}"
 
 if [ $BUILD -eq 1 ]; then
-    dotnet build3 build.proj /m /p:Architecture=$ARCHITECTURE "${args[@]}"
+    dotnet msbuild build.proj /m /p:Architecture=$ARCHITECTURE "${args[@]}"
 else
     echo "Not building due to --nobuild"
-    echo "Command that would be run is: 'dotnet build3 build.proj /m /p:Architecture=$ARCHITECTURE ${args[@]}'"
+    echo "Command that would be run is: 'dotnet msbuild build.proj /m /p:Architecture=$ARCHITECTURE ${args[@]}'"
 fi

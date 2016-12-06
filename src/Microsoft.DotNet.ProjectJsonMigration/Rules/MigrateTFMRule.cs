@@ -8,25 +8,21 @@ using System.Text;
 using Microsoft.Build.Construction;
 using Microsoft.DotNet.ProjectJsonMigration.Transforms;
 using NuGet.Frameworks;
+using System.Collections.Generic;
 
 namespace Microsoft.DotNet.ProjectJsonMigration.Rules
 {
     // TODO: Support Multi-TFM
-    public class MigrateTFMRule : IMigrationRule
+    internal class MigrateTFMRule : IMigrationRule
     {
+        private const string RuntimeIdentifiers =
+            "win7-x64;win7-x86;osx.10.10-x64;osx.10.11-x64;ubuntu.14.04-x64;ubuntu.16.04-x64;centos.7-x64;rhel.7.2-x64;debian.8-x64;fedora.23-x64;opensuse.13.2-x64";
+
         private readonly ITransformApplicator _transformApplicator;
-        private readonly AddPropertyTransform<NuGetFramework>[] _transforms;
 
         public MigrateTFMRule(ITransformApplicator transformApplicator = null)
         {
             _transformApplicator = transformApplicator ?? new TransformApplicator();
-
-            _transforms = new AddPropertyTransform<NuGetFramework>[]
-            {
-                OutputPathTransform,
-                FrameworkIdentifierTransform,
-                FrameworkVersionTransform
-            };
         }
 
         public void Apply(MigrationSettings migrationSettings, MigrationRuleInputs migrationRuleInputs)
@@ -35,23 +31,68 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
             var propertyGroup = migrationRuleInputs.CommonPropertyGroup;
 
             CleanExistingProperties(csproj);
+            CleanExistingPackageReferences(csproj);
 
-            foreach (var transform in _transforms)
+            if(migrationRuleInputs.ProjectContexts.Count() == 1)
             {
                 _transformApplicator.Execute(
-                    transform.Transform(migrationRuleInputs.DefaultProjectContext.TargetFramework),
-                    propertyGroup);
+                    FrameworkTransform.Transform(
+                        migrationRuleInputs.ProjectContexts.Single().TargetFramework),
+                    propertyGroup,
+                    mergeExisting: true);
+                _transformApplicator.Execute(
+                    FrameworkRuntimeIdentifiersTransform.Transform(
+                        migrationRuleInputs.ProjectContexts.Single().TargetFramework),
+                    propertyGroup,
+                    mergeExisting: true);
+            }
+            else
+            {
+                _transformApplicator.Execute(
+                    FrameworksTransform.Transform(
+                        migrationRuleInputs.ProjectContexts.Select(p => p.TargetFramework)),
+                    propertyGroup,
+                    mergeExisting: true);
+                _transformApplicator.Execute(
+                    FrameworksRuntimeIdentifiersTransform.Transform(
+                        migrationRuleInputs.ProjectContexts.Select(p => p.TargetFramework)),
+                    propertyGroup,
+                    mergeExisting: true);
             }
         }
 
         private void CleanExistingProperties(ProjectRootElement csproj)
         {
-            var existingPropertiesToRemove = new string[] { "TargetFrameworkIdentifier", "TargetFrameworkVersion" };
+            var existingPropertiesToRemove = new string[] 
+            {
+                "TargetFrameworkIdentifier",
+                "TargetFrameworkVersion",
+                "TargetFrameworks",
+                "TargetFramework"
+            };
+            
             var properties = csproj.Properties.Where(p => existingPropertiesToRemove.Contains(p.Name));
 
             foreach (var property in properties)
             {
                 property.Parent.RemoveChild(property);
+            }
+        }
+
+        //TODO: this is a hack right now to clean packagerefs. This is not the final resting place for this piece of code
+        // @brthor will move it to its final location as part of this PackageRef PR: https://github.com/dotnet/cli/pull/4261
+        private void CleanExistingPackageReferences(ProjectRootElement outputMSBuildProject)
+        {
+            var packageRefs = outputMSBuildProject
+                .Items
+                .Where(i => i.ItemType == "PackageReference" && i.Include != PackageConstants.SdkPackageName)
+                .ToList();
+
+            foreach (var packageRef in packageRefs)
+            {
+                var parent = packageRef.Parent;
+                packageRef.Parent.RemoveChild(packageRef);
+                parent.RemoveIfEmpty();
             }
         }
 
@@ -75,20 +116,28 @@ namespace Microsoft.DotNet.ProjectJsonMigration.Rules
             return sb.ToString();
         }
 
-        // TODO: When we have this inferred in the sdk targets, we won't need this
-        private AddPropertyTransform<NuGetFramework> OutputPathTransform =>
-            new AddPropertyTransform<NuGetFramework>("OutputPath",
-                f => $"bin/$(Configuration)/{f.GetShortFolderName()}",
-                f => true);
+        private AddPropertyTransform<IEnumerable<NuGetFramework>> FrameworksTransform =>
+            new AddPropertyTransform<IEnumerable<NuGetFramework>>(
+                "TargetFrameworks",
+                frameworks => string.Join(";", frameworks.Select(f => f.GetShortFolderName())),
+                frameworks => true);
 
-        private AddPropertyTransform<NuGetFramework> FrameworkIdentifierTransform =>
-            new AddPropertyTransform<NuGetFramework>("TargetFrameworkIdentifier",
-                f => f.Framework,
-                f => true);
+        private AddPropertyTransform<IEnumerable<NuGetFramework>> FrameworksRuntimeIdentifiersTransform =>
+            new AddPropertyTransform<IEnumerable<NuGetFramework>>(
+                "RuntimeIdentifiers",
+                frameworks => RuntimeIdentifiers,
+                frameworks => frameworks.Any(f => !f.IsPackageBased));
 
-        private AddPropertyTransform<NuGetFramework> FrameworkVersionTransform =>
-            new AddPropertyTransform<NuGetFramework>("TargetFrameworkVersion",
-                f => "v" + GetDisplayVersion(f.Version),
-                f => true);
+        private AddPropertyTransform<NuGetFramework> FrameworkTransform =>
+            new AddPropertyTransform<NuGetFramework>(
+                "TargetFramework",
+                framework => framework.GetShortFolderName(),
+                framework => true);
+
+        private AddPropertyTransform<NuGetFramework> FrameworkRuntimeIdentifiersTransform =>
+            new AddPropertyTransform<NuGetFramework>(
+                "RuntimeIdentifiers",
+                framework => RuntimeIdentifiers,
+                framework => !framework.IsPackageBased);
     }
 }

@@ -1,12 +1,10 @@
 ﻿using Microsoft.Build.Construction;
 using Microsoft.DotNet.Cli;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.DotNet.ProjectJsonMigration;
+using Microsoft.Build.Evaluation;
 
 namespace Microsoft.DotNet.Tools.Migrate
 {
@@ -17,15 +15,19 @@ namespace Microsoft.DotNet.Tools.Migrate
         private readonly string _projectDirectory;
 
         public ProjectRootElement MSBuildProject { get; }
-        public JObject ProjectJson { get; }
+
+        public string MSBuildProjectPath
+        {
+            get
+            {
+                return Path.Combine(_projectDirectory, c_temporaryDotnetNewMSBuildProjectName + ".csproj");
+            }
+        }
 
         public TemporaryDotnetNewTemplateProject()
         {
             _projectDirectory = CreateDotnetNewMSBuild(c_temporaryDotnetNewMSBuildProjectName);
-            MSBuildProject = GetMSBuildProject(_projectDirectory);
-            ProjectJson = GetProjectJson(_projectDirectory);
-
-            Clean();
+            MSBuildProject = GetMSBuildProject();
         }
 
         public void Clean()
@@ -47,23 +49,17 @@ namespace Microsoft.DotNet.Tools.Migrate
             }
             Directory.CreateDirectory(tempDir);
 
-            RunCommand("new", new string[] { "-t", "msbuild" }, tempDir);
+            RunCommand("new", new string[] {}, tempDir);
 
             return tempDir;
         }
 
-        private ProjectRootElement GetMSBuildProject(string temporaryDotnetNewMSBuildDirectory)
+        private ProjectRootElement GetMSBuildProject()
         {
-            var templateProjPath = Path.Combine(temporaryDotnetNewMSBuildDirectory,
-                c_temporaryDotnetNewMSBuildProjectName + ".csproj");
-
-            return ProjectRootElement.Open(templateProjPath);
-        }
-
-        private JObject GetProjectJson(string temporaryDotnetNewMSBuildDirectory)
-        {
-            var projectJsonFile = Path.Combine(temporaryDotnetNewMSBuildDirectory, "project.json");
-            return JObject.Parse(File.ReadAllText(projectJsonFile));
+            return ProjectRootElement.Open(
+                MSBuildProjectPath,
+                ProjectCollection.GlobalProjectCollection,
+                preserveFormatting: true);
         }
 
         private void RunCommand(string commandToExecute, IEnumerable<string> args, string workingDirectory)

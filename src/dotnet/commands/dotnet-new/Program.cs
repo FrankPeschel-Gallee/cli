@@ -28,12 +28,13 @@ namespace Microsoft.DotNet.Tools.New
             return parts[parts.Length - 2] + "." + parts[parts.Length - 1];
         }
 
-        public int CreateEmptyProject(string languageName, string templateDir)
+        public int CreateEmptyProject(string languageName, string templateDir, bool isMsBuild)
         {
             // Check if project.json exists in the folder
-            if (File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "project.json")))
+            if (File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "project.json")) && !isMsBuild)
             {
-                Reporter.Error.WriteLine($"Creating new {languageName} project failed, project already exists.");
+                Reporter.Error.WriteLine(string.Format(LocalizableStrings.ProjectExistsError, languageName));
+                
                 return 1;
             }
 
@@ -60,7 +61,7 @@ namespace Microsoft.DotNet.Tools.New
                         {
                             if (File.Exists(Path.Combine(Directory.GetCurrentDirectory(), entry)))
                             {
-                                Reporter.Error.WriteLine($"Creating new {languageName} project failed, directory already contains {entry}");
+                                Reporter.Error.WriteLine(string.Format(LocalizableStrings.ProjectContainsError, languageName, entry));
                                 return 1;
                             }
                         }
@@ -69,8 +70,12 @@ namespace Microsoft.DotNet.Tools.New
 
                         archive.ExtractToDirectory(projectDirectory);
 
-                        ReplaceProjectJsonTemplateValues(projectDirectory);
                         ReplaceFileTemplateNames(projectDirectory);
+
+                        if (!isMsBuild)
+                        {
+                            ReplaceProjectJsonTemplateValues(projectDirectory);
+                        }
                     }
                     catch (IOException ex)
                     {
@@ -82,11 +87,11 @@ namespace Microsoft.DotNet.Tools.New
 
             if (hasFilesToOverride)
             {
-                Reporter.Error.WriteLine($"Creating new {languageName} project failed.");
+                Reporter.Error.WriteLine(string.Format(LocalizableStrings.ProjectFailedError, languageName));
                 return 1;
             }
 
-            Reporter.Output.WriteLine($"Created new {languageName} project in {Directory.GetCurrentDirectory()}.");
+            Reporter.Output.WriteLine(string.Format(LocalizableStrings.CreatedNewProject, languageName, Directory.GetCurrentDirectory()));
 
             return 0;
         }
@@ -94,10 +99,12 @@ namespace Microsoft.DotNet.Tools.New
         private static void ReplaceProjectJsonTemplateValues(string projectDirectory)
         {
             string projectJsonFile = Path.Combine(projectDirectory, "project.json");
+            string projectJsonTemplateFile = Path.Combine(projectDirectory, "project.json.template");
 
-            File.Move(
-                Path.Combine(projectDirectory, "project.json.template"),
-                projectJsonFile);
+            if(File.Exists(projectJsonTemplateFile))
+            {
+                File.Move(projectJsonTemplateFile, projectJsonFile);
+            }
         }
 
         private static void ReplaceFileTemplateNames(string projectDirectory)
@@ -122,46 +129,71 @@ namespace Microsoft.DotNet.Tools.New
 
             var app = new CommandLineApplication();
             app.Name = "dotnet new";
-            app.FullName = ".NET Initializer";
-            app.Description = "Initializes empty project for .NET Platform";
+            app.FullName = LocalizableStrings.AppFullName;
+            app.Description = LocalizableStrings.AppDescription;
             app.HelpOption("-h|--help");
 
-            var csharp = new { Name = "C#", Alias = new[] { "c#", "cs", "csharp" }, TemplatePrefix = "CSharp", Templates = new[] { "Console", "Web", "Lib", "xunittest", "nunittest", "MSBuild" } };
-            var fsharp = new { Name = "F#", Alias = new[] { "f#", "fs", "fsharp" }, TemplatePrefix = "FSharp", Templates = new[] { "Console", "Lib" } };
+            var csharp = new { Name = "C#", Alias = new[] { "c#", "cs", "csharp" }, TemplatePrefix = "CSharp", 
+                               Templates = new[] 
+                               { 
+                                   new { Name = "Console", isMsBuild = true }, 
+                                   new { Name = "Web", isMsBuild = true }, 
+                                   new { Name = "Lib", isMsBuild = true },
+                                   new { Name = "Mstest", isMsBuild = true },
+                                   new { Name = "Xunittest", isMsBuild = true }
+                               }
+            };
+
+            var fsharp = new { Name = "F#", Alias = new[] { "f#", "fs", "fsharp" }, TemplatePrefix = "FSharp", 
+                               Templates = new[] 
+                               { 
+                                   new { Name = "Console", isMsBuild = true }, 
+                                   new { Name = "Web", isMsBuild = true }, 
+                                   new { Name = "Lib", isMsBuild = true },
+                                   new { Name = "Mstest", isMsBuild = true },
+                                   new { Name = "Xunittest", isMsBuild = true }
+                               }
+            };
 
             var languages = new[] { csharp, fsharp };
 
             string langValuesString = string.Join(", ", languages.Select(l => l.Name));
             var typeValues = 
                 from l in languages
-                let values = string.Join(", ", l.Templates)
-                select $"Valid values for {l.Name}: {values}.";
+                let values = string.Join(", ", l.Templates.Select(t => t.Name))
+                select string.Format(LocalizableStrings.ValidValuesText, l.Name, values);
             string typeValuesString = string.Join(" ", typeValues);
 
-            var lang = app.Option("-l|--lang <LANGUAGE>", $"Language of project    Valid values: {langValuesString}.", CommandOptionType.SingleValue);
-            var type = app.Option("-t|--type <TYPE>", $"Type of project        {typeValuesString}", CommandOptionType.SingleValue);
+            var lang = app.Option(
+                $"-l|--lang <{LocalizableStrings.Language}>", 
+                string.Format(LocalizableStrings.LanguageOfProject, langValuesString), 
+                CommandOptionType.SingleValue);
+            var type = app.Option(
+                $"-t|--type <{LocalizableStrings.Type}>", 
+                string.Format(LocalizableStrings.TypeOfProject, typeValuesString), 
+                CommandOptionType.SingleValue);
 
             var dotnetNew = new NewCommand();
             app.OnExecute(() =>
             {
                 string languageValue = lang.Value() ?? csharp.Name;
 
-                var language = new[] { csharp, fsharp }
+                var language = languages
                     .FirstOrDefault(l => l.Alias.Contains(languageValue, StringComparer.OrdinalIgnoreCase));
 
                 if (language == null)
                 {
-                    Reporter.Error.WriteLine($"Unrecognized language: {languageValue}".Red());
+                    Reporter.Error.WriteLine(string.Format(LocalizableStrings.UnrecognizedLanguage, languageValue).Red());
                     return -1;
                 }
 
-                string typeValue = type.Value() ?? language.Templates.First();
+                string typeValue = type.Value() ?? language.Templates.First().Name;
 
-                string templateName = language.Templates.FirstOrDefault(t => StringComparer.OrdinalIgnoreCase.Equals(typeValue, t));
-                if (templateName == null)
+                var template = language.Templates.FirstOrDefault(t => StringComparer.OrdinalIgnoreCase.Equals(typeValue, t.Name));
+                if (template == null)
                 {
-                    Reporter.Error.WriteLine($"Unrecognized type: {typeValue}".Red());
-                    Reporter.Error.WriteLine($"Available types for {language.Name} :".Red());
+                    Reporter.Error.WriteLine(string.Format(LocalizableStrings.UnrecognizedType, typeValue).Red());
+                    Reporter.Error.WriteLine(string.Format(LocalizableStrings.AvailableTypes, language.Name).Red());
                     foreach (var t in language.Templates)
                     {
                         Reporter.Error.WriteLine($"- {t}".Red());
@@ -169,9 +201,9 @@ namespace Microsoft.DotNet.Tools.New
                     return -1;
                 }
 
-                string templateDir = $"{language.TemplatePrefix}_{templateName}";
+                string templateDir = $"{language.TemplatePrefix}_{template.Name}";
 
-                return dotnetNew.CreateEmptyProject(language.Name, templateDir);
+                return dotnetNew.CreateEmptyProject(language.Name, templateDir, template.isMsBuild);
             });
 
             try

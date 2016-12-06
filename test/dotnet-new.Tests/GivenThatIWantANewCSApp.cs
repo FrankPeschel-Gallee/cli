@@ -4,59 +4,37 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using Microsoft.Build.Construction;
 using Microsoft.DotNet.Tools.Test.Utilities;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Xunit;
 using FluentAssertions;
 
-namespace Microsoft.DotNet.Tests
+namespace Microsoft.DotNet.New.Tests
 {
     public class GivenThatIWantANewCSApp : TestBase
     {
         [Fact]
-        public void When_NewtonsoftJson_dependency_added_Then_project_restores_and_runs()
+        public void When_dotnet_build_is_invoked_Then_app_builds_without_warnings()
         {
-            var rootPath = Temp.CreateDirectory().Path;
-            var projectJsonFile = Path.Combine(rootPath, "project.json");
-
-            new TestCommand("dotnet") { WorkingDirectory = rootPath }
-                .Execute("new");
-            
-            AddProjectJsonDependency(projectJsonFile, "Newtonsoft.Json", "7.0.1");
-
-            new TestCommand("dotnet") { WorkingDirectory = rootPath }
-                .Execute("restore")
-                .Should().Pass();
-
-            new TestCommand("dotnet") { WorkingDirectory = rootPath }
-                .Execute("run")
-                .Should().Pass();
-        }
-        
-        [Fact]
-        public void When_dotnet_build_is_invoked_Then_project_builds_without_warnings()
-        {
-            var rootPath = Temp.CreateDirectory().Path;
+            var rootPath = TestAssetsManager.CreateTestDirectory().Path;
 
             new TestCommand("dotnet") { WorkingDirectory = rootPath }
                 .Execute("new");
 
             new TestCommand("dotnet") { WorkingDirectory = rootPath }
-                .Execute("restore");
+                .Execute("restore /p:SkipInvalidConfigurations=true");
 
             var buildResult = new TestCommand("dotnet") { WorkingDirectory = rootPath }
                 .ExecuteWithCapturedOutput("build");
             
-            buildResult.Should().Pass();
-            buildResult.Should().NotHaveStdErr();
+            buildResult.Should().Pass()
+                       .And.NotHaveStdErr();
         }
 
         [Fact]
         public void When_dotnet_new_is_invoked_mupliple_times_it_should_fail()
         {
-            var rootPath = Temp.CreateDirectory().Path;
+            var rootPath = TestAssetsManager.CreateTestDirectory().Path;
 
             new TestCommand("dotnet") { WorkingDirectory = rootPath }
                 .Execute("new");
@@ -70,40 +48,17 @@ namespace Microsoft.DotNet.Tests
 
             Assert.Equal(expectedState, actualState);
 
-            result.Should().Fail();
-            result.Should().HaveStdErr();
+            result.Should().Fail()
+                  .And.HaveStdErr();
         }
         
-        private static void AddProjectJsonDependency(string projectJsonPath, string dependencyId, string dependencyVersion)
+        internal static void AddProjectDependency(string projectFilePath, string dependencyId, string dependencyVersion)
         {
-            var projectJsonRoot = ReadProject(projectJsonPath);
+            var projectRootElement = ProjectRootElement.Open(projectFilePath);
 
-            var dependenciesNode = projectJsonRoot
-                .Descendants()
-                .OfType<JProperty>()
-                .First(p => p.Name == "dependencies");
+            projectRootElement.AddItem("PackageReference", dependencyId, new Dictionary<string, string>{{"Version", dependencyVersion}});
 
-            ((JObject)dependenciesNode.Value).Add(new JProperty(dependencyId, dependencyVersion));
-
-            WriteProject(projectJsonRoot, projectJsonPath);
-        }
-
-        private static JObject ReadProject(string projectJsonPath)
-        {
-            using (TextReader projectFileReader = File.OpenText(projectJsonPath))
-            {
-                var projectJsonReader = new JsonTextReader(projectFileReader);
-
-                var serializer = new JsonSerializer();
-                return serializer.Deserialize<JObject>(projectJsonReader);
-            }
-        }
-
-        private static void WriteProject(JObject projectRoot, string projectJsonPath)
-        {
-            string projectJson = JsonConvert.SerializeObject(projectRoot, Formatting.Indented);
-
-            File.WriteAllText(projectJsonPath, projectJson + Environment.NewLine);
+            projectRootElement.Save();
         }
     }
 }
